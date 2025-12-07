@@ -76,3 +76,6 @@ db-data/
 
 # Publish output
 publish/
+
+# Production compose
+compose.prod.yaml

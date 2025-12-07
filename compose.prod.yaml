@@ -1,13 +1,34 @@
+# compose.prod.yaml (erweitert)
 services:
+  npm:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: nginx-proxy-manager
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+      - "81:81"
+    volumes:
+      - npm_data:/data
+      - npm_letsencrypt:/etc/letsencrypt
+
   server:
+    image: oagesus/cautch:${TAG:-latest}
+    container_name: cautch
+    restart: always
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
       - ConnectionStrings__PostgresConnection=Host=VMSTSSQL01;Port=5432;Database=mudblazor_cinema;Username=postgres;Password=${POSTGRES_PASSWORD}
     volumes:
       - nas_share:/app/images:ro
-    restart: always
+      - app_data:/app/App_Data
+    # Kein ports: - NPM leitet intern weiter
 
 volumes:
+  npm_data:
+  npm_letsencrypt:
+  app_data:
   nas_share:
     driver: local
     driver_opts:
