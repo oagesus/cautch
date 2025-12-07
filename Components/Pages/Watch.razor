@@ -1,0 +1,1489 @@
+@page "/watch/{movieId:int}"
+@attribute [Authorize]
+@layout mudblazor_cinema.Components.Layout.EmptyLayout
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using mudblazor_cinema.Models
+@using Microsoft.EntityFrameworkCore
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+@inject mudblazor_cinema.Data.AppDbContext DbContext
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<PageTitle>@(movie?.Name ?? "Watch")</PageTitle>
+
+<style>
+    html, body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        width: 100%;
+        height: 100%;
+        position: fixed;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    * {
+        box-sizing: border-box;
+    }
+
+    .video-page-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        width: 100dvw;
+        height: 100vh;
+        height: 100dvh;
+        background: #000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        z-index: 9999;
+    }
+
+    .custom-video-container {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        max-width: 100vw;
+        max-width: 100dvw;
+        max-height: 100vh;
+        max-height: 100dvh;
+        background: #000;
+        cursor: none;
+        overflow: hidden;
+        user-select: none;
+        touch-action: none;
+    }
+
+    .custom-video-container.controls-visible {
+        cursor: auto;
+    }
+
+    .custom-video {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 100%;
+        height: 100%;
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        background: #000;
+    }
+
+    body.video-playing {
+        position: fixed;
+        overflow: hidden;
+        width: 100%;
+        height: 100%;
+    }
+
+    .video-top-bar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
+        padding: 20px 25px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        z-index: 10;
+        pointer-events: none;
+    }
+
+    .custom-video-container.controls-visible .video-top-bar {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .back-btn {
+        background: none;
+        border: none;
+        color: white;
+        cursor: pointer;
+        padding: 5px;
+        display: flex;
+        align-items: center;
+        transition: transform 0.15s ease;
+        -webkit-tap-highlight-color: transparent;
+        flex-shrink: 0;
+    }
+
+    .back-btn:hover {
+        transform: scale(1.2);
+    }
+
+    .back-btn svg {
+        width: 36px;
+        height: 36px;
+        fill: white;
+        display: block;
+        will-change: transform;
+    }
+
+    .movie-title {
+        color: white;
+        font-size: 1.4rem;
+        font-weight: 500;
+        text-align: center;
+        margin: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        max-width: calc(100% - 120px);
+    }
+
+    .spacer {
+        width: 46px;
+        flex-shrink: 0;
+    }
+
+    @@media (max-width: 600px) {
+        .movie-title {
+            font-size: 1.1rem;
+            max-width: calc(100% - 90px);
+        }
+        
+        .video-top-bar {
+            padding: 15px 15px;
+        }
+        
+        .back-btn svg {
+            width: 28px;
+            height: 28px;
+        }
+
+        .spacer {
+            width: 38px;
+        }
+    }
+
+    .video-controls {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
+        padding: 40px 35px 30px;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        pointer-events: none;
+    }
+
+    .custom-video-container.controls-visible .video-controls {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    @@media (max-width: 600px) {
+        .video-controls {
+            padding: 30px 15px 20px;
+        }
+    }
+
+    .progress-container {
+        width: 100%;
+        height: 8px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 4px;
+        cursor: pointer;
+        position: relative;
+        margin-bottom: 25px;
+        transition: height 0.2s;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .progress-container:hover {
+        height: 12px;
+    }
+
+    .progress-container.hovering,
+    .progress-container.dragging {
+        height: 12px;
+    }
+
+    .progress-bar {
+        height: 100%;
+        background: #e50914;
+        border-radius: 4px;
+        position: relative;
+        transition: width 0.1s linear;
+        z-index: 2;
+    }
+
+    .progress-bar::after {
+        content: '';
+        position: absolute;
+        right: -10px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 20px;
+        height: 20px;
+        background: white;
+        border-radius: 50%;
+        opacity: 0;
+        transition: opacity 0.2s;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .progress-container:hover .progress-bar::after {
+        opacity: 1;
+    }
+
+    .progress-container.hovering .progress-bar::after,
+    .progress-container.dragging .progress-bar::after {
+        opacity: 1;
+    }
+
+    .buffered-bar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 4px;
+        z-index: 1;
+    }
+
+    .controls-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+    }
+
+    .controls-left,
+    .controls-right {
+        display: flex;
+        align-items: center;
+        gap: 25px;
+    }
+
+    @@media (max-width: 600px) {
+        .controls-left,
+        .controls-right {
+            gap: 15px;
+        }
+    }
+
+    .play-pause-btn {
+        background: none;
+        border: none;
+        color: white;
+        cursor: pointer;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.15s ease;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .play-pause-btn:hover {
+        transform: scale(1.3);
+    }
+
+    .play-pause-btn svg {
+        width: 48px;
+        height: 48px;
+        fill: white;
+        display: block;
+        will-change: transform;
+    }
+
+    @@media (max-width: 600px) {
+        .play-pause-btn svg {
+            width: 36px;
+            height: 36px;
+        }
+    }
+
+    .skip-btn {
+        background: none;
+        border: none;
+        color: white;
+        cursor: pointer;
+        padding: 5px;
+        display: flex;
+        align-items: center;
+        font-size: 14px;
+        transition: transform 0.15s ease;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .skip-btn:hover {
+        transform: scale(1.25);
+    }
+
+    .skip-btn svg {
+        width: 40px;
+        height: 40px;
+        fill: white;
+        display: block;
+        will-change: transform;
+    }
+
+    @@media (max-width: 600px) {
+        .skip-btn svg {
+            width: 32px;
+            height: 32px;
+        }
+    }
+
+    .volume-control {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    @@media (max-width: 1000px) {
+        .volume-control {
+            display: none;
+        }
+    }
+
+    .volume-btn {
+        background: none;
+        border: none;
+        color: white;
+        cursor: pointer;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        transition: transform 0.15s ease;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .volume-btn:hover {
+        transform: scale(1.25);
+    }
+
+    .volume-btn svg {
+        width: 36px;
+        height: 36px;
+        fill: white;
+        display: block;
+        will-change: transform;
+    }
+
+    .volume-slider {
+        width: 0;
+        opacity: 0;
+        transition: width 0.3s, opacity 0.3s;
+        -webkit-appearance: none;
+        appearance: none;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 3px;
+        outline: none;
+        touch-action: none;
+        cursor: pointer;
+    }
+
+    .volume-control:hover .volume-slider,
+    .volume-slider:focus,
+    .volume-slider:active {
+        width: 110px;
+        opacity: 1;
+    }
+
+    .volume-slider::-webkit-slider-runnable-track {
+        height: 6px;
+        border-radius: 3px;
+        background: linear-gradient(to right, 
+            #e50914 0%, 
+            #e50914 calc(var(--volume-percent, 100%) * 1%), 
+            rgba(255, 255, 255, 0.2) calc(var(--volume-percent, 100%) * 1%), 
+            rgba(255, 255, 255, 0.2) 100%);
+    }
+
+    .volume-slider::-moz-range-track {
+        height: 6px;
+        border-radius: 3px;
+        background: linear-gradient(to right, 
+            #e50914 0%, 
+            #e50914 calc(var(--volume-percent, 100%) * 1%), 
+            rgba(255, 255, 255, 0.2) calc(var(--volume-percent, 100%) * 1%), 
+            rgba(255, 255, 255, 0.2) 100%);
+    }
+
+    .volume-slider::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 16px;
+        height: 16px;
+        background: white;
+        border-radius: 50%;
+        cursor: pointer;
+        transition: transform 0.15s ease;
+        margin-top: -5px;
+    }
+
+    .volume-slider::-webkit-slider-thumb:hover,
+    .volume-slider::-webkit-slider-thumb:active {
+        transform: scale(1.3);
+    }
+
+    .volume-slider::-moz-range-thumb {
+        width: 16px;
+        height: 16px;
+        background: white;
+        border-radius: 50%;
+        cursor: pointer;
+        border: none;
+        transition: transform 0.15s ease;
+    }
+
+    .volume-slider::-moz-range-thumb:hover,
+    .volume-slider::-moz-range-thumb:active {
+        transform: scale(1.3);
+    }
+
+    .time-display {
+        color: white;
+        font-size: 16px;
+        font-family: 'Segoe UI', sans-serif;
+        user-select: none;
+        font-weight: 500;
+    }
+
+    @@media (max-width: 600px) {
+        .time-display {
+            font-size: 14px;
+        }
+    }
+
+    .speed-control {
+        position: relative;
+    }
+
+    .speed-btn {
+        background: none;
+        border: none;
+        color: white;
+        cursor: pointer;
+        padding: 5px;
+        display: flex;
+        align-items: center;
+        transition: transform 0.15s ease;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    @@media (max-width: 600px) {
+        .speed-btn {
+            padding: 5px;
+        }
+    }
+
+    .speed-btn:hover {
+        transform: scale(1.2);
+    }
+    
+    .speed-btn svg {
+        width: 32px;
+        height: 32px;
+        fill: white;
+        display: block;
+        will-change: transform;
+    }
+
+    @@media (max-width: 600px) {
+        .speed-btn svg {
+            width: 28px;
+            height: 28px;
+        }
+    }
+
+    .speed-menu {
+        position: absolute;
+        bottom: 100%;
+        right: 0;
+        margin-bottom: 10px;
+        background: rgba(0, 0, 0, 0.95);
+        border-radius: 8px;
+        padding: 8px 0;
+        min-width: 100px;
+        max-height: 60vh;
+        z-index: 100;
+        display: none;
+        overflow-y: auto;
+        overflow-x: hidden;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    @@media (max-width: 600px) {
+        .speed-menu {
+            max-height: 50vh;
+        }
+    }
+    
+    .speed-menu.active {
+        display: block;
+    }
+
+    .speed-option {
+        background: none;
+        border: none;
+        color: white;
+        cursor: pointer;
+        padding: 10px 20px;
+        width: 100%;
+        text-align: center;
+        font-size: 1rem;
+        font-family: 'Segoe UI', sans-serif;
+        transition: background-color 0.2s ease;
+        -webkit-tap-highlight-color: transparent;
+        display: block;
+    }
+
+    .speed-option:hover {
+        background: rgba(255, 255, 255, 0.1);
+    }
+
+    .speed-option.active {
+        background: rgba(229, 9, 20, 0.3);
+        font-weight: 600;
+    }
+
+    .fullscreen-btn {
+        background: none;
+        border: none;
+        color: white;
+        cursor: pointer;
+        padding: 5px;
+        display: flex;
+        align-items: center;
+        transition: transform 0.15s ease;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .fullscreen-btn:hover {
+        transform: scale(1.25);
+    }
+
+    .fullscreen-btn svg {
+        width: 36px;
+        height: 36px;
+        fill: white;
+        display: block;
+        will-change: transform;
+    }
+
+    @@media (max-width: 600px) {
+        .fullscreen-btn svg {
+            width: 28px;
+            height: 28px;
+        }
+    }
+
+    .loading-spinner {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        display: none;
+        z-index: 20;
+    }
+
+    .loading-spinner.active {
+        display: block;
+    }
+
+    .video-feedback-icon {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        background: rgba(0, 0, 0, 0.5);
+        border-radius: 50%;
+        padding: 15px;
+        opacity: 0;
+        transition: opacity 0.15s ease;
+        pointer-events: none;
+        z-index: 15;
+    }
+
+    .video-feedback-icon.video-feedback-center {
+        left: 50%;
+        transform: translate(-50%, -50%);
+    }
+
+    .video-feedback-icon.video-feedback-left {
+        left: 15%;
+    }
+
+    .video-feedback-icon.video-feedback-right {
+        right: 15%;
+    }
+
+    .video-feedback-icon.show {
+        opacity: 0.8;
+    }
+
+    .video-feedback-icon.hide {
+        opacity: 0;
+        transition: opacity 0.2s ease;
+    }
+
+    .video-feedback-icon svg {
+        display: block;
+    }
+</style>
+
+@if (isLoading)
+{
+    <div class="video-page-container">
+        <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+    </div>
+}
+else if (movie == null)
+{
+    <div class="video-page-container">
+        <MudContainer>
+            <MudAlert Severity="Severity.Error">Movie not found</MudAlert>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" @onclick="NavigateToBrowse" Class="mt-4">
+                Back to Browse
+            </MudButton>
+        </MudContainer>
+    </div>
+}
+else if (string.IsNullOrEmpty(videoUrl))
+{
+    <div class="video-page-container">
+        <MudContainer>
+            <MudAlert Severity="Severity.Warning">No video URL available for this movie</MudAlert>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" @onclick="NavigateToBrowse" Class="mt-4">
+                Back to Browse
+            </MudButton>
+        </MudContainer>
+    </div>
+}
+else
+{
+    <div class="video-page-container">
+        <div class="custom-video-container @(showControls ? "controls-visible" : "")">
+            
+            <video class="custom-video" 
+                   src="@videoUrl"
+                   autoplay
+                   @ontimeupdate="OnTimeUpdate"
+                   @onloadedmetadata="OnLoadedMetadata"
+                   @onprogress="OnProgress"
+                   @onwaiting="() => isBuffering = true"
+                   @onplaying="() => isBuffering = false"
+                   @onpause="() => isPaused = true"
+                   @onplay="() => isPaused = false"
+                   @onended="OnVideoEnded">
+                Your browser does not support the video tag.
+            </video>
+
+            <div class="video-top-bar">
+                <button class="back-btn" @onclick="NavigateToBrowse" title="Back to Browse">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+                    </svg>
+                </button>
+                <span class="movie-title">@movie.Name</span>
+                <div class="spacer"></div>
+            </div>
+
+            <div class="loading-spinner @(isBuffering ? "active" : "")">
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+            </div>
+
+            <div class="video-controls">
+                <div class="progress-container" @onclick="SeekVideo">
+                    <div class="buffered-bar" style="width: @(bufferedPercent.ToString("F2", System.Globalization.CultureInfo.InvariantCulture))%"></div>
+                    <div class="progress-bar" style="width: @(progressPercent.ToString("F2", System.Globalization.CultureInfo.InvariantCulture))%"></div>
+                </div>
+
+                <div class="controls-row">
+                    <div class="controls-left">
+                        <button class="play-pause-btn" @onclick="TogglePlayPause">
+                            @if (isPaused)
+                            {
+                                <svg viewBox="0 0 24 24">
+                                    <path d="M8 5v14l11-7z"/>
+                                </svg>
+                            }
+                            else
+                            {
+                                <svg viewBox="0 0 24 24">
+                                    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                                </svg>
+                            }
+                        </button>
+
+                        <button class="skip-btn" @onclick="() => SkipTimeWithFeedback(-10)" title="Skip backward 10s">
+                            <svg viewBox="0 0 24 24" width="48" height="48" fill="white">
+                                <path d="M11.99 5V1l-5 5l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6s-6-2.69-6-6h-2c0 4.42 3.58 8 8 8s8-3.58 8-8S16.41 5 11.99 5z"/>
+                                <path d="M10.89 16h-0.85v-3.26l-1.01 0.31v-0.69l1.77-0.63h0.09V16z"/>
+                                <path d="M15.17 14.24c0 0.32-0.03 0.6-0.1 0.82s-0.17 0.42-0.29 0.57s-0.28 0.26-0.45 0.33s-0.37 0.1-0.59 0.1s-0.41-0.03-0.59-0.1s-0.33-0.18-0.46-0.33s-0.23-0.34-0.3-0.57s-0.11-0.5-0.11-0.82V13.5c0-0.32 0.03-0.6 0.1-0.82s0.17-0.42 0.29-0.57s0.28-0.26 0.45-0.33s0.37-0.1 0.59-0.1s0.41 0.03 0.59 0.1c0.18 0.07 0.33 0.18 0.46 0.33s0.23 0.34 0.3 0.57s0.11 0.5 0.11 0.82V14.24zM14.32 13.38c0-0.19-0.01-0.35-0.04-0.48s-0.07-0.23-0.12-0.31s-0.11-0.14-0.19-0.17s-0.16-0.05-0.25-0.05s-0.18 0.02-0.25 0.05s-0.14 0.09-0.19 0.17s-0.09 0.18-0.12 0.31s-0.04 0.29-0.04 0.48v0.97c0 0.19 0.01 0.35 0.04 0.48s0.07 0.24 0.12 0.32s0.11 0.14 0.19 0.17s0.16 0.05 0.25 0.05s0.18-0.02 0.25-0.05s0.14-0.09 0.19-0.17s0.09-0.19 0.11-0.32s0.04-0.29 0.04-0.48V13.38z"/>
+                            </svg>
+                        </button>
+
+                        <button class="skip-btn" @onclick="() => SkipTimeWithFeedback(10)" title="Skip forward 10s">
+                            <svg viewBox="0 0 24 24" width="48" height="48" fill="white">
+                                <path d="M18 13c0 3.31-2.69 6-6 6s-6-2.69-6-6s2.69-6 6-6v4l5-5l-5-5v4c-4.42 0-8 3.58-8 8c0 4.42 3.58 8 8 8c4.42 0 8-3.58 8-8H18z"/>
+                                <path d="M10.86 15.94l0-4.27l-0.09 0l-1.77 0.63v0.69l1.01-0.31l0 3.26z"/>
+                                <path d="M12.25 13.44v0.74c0 1.9 1.31 1.82 1.44 1.82c0.14 0 1.44 0.09 1.44-1.82v-0.74c0-1.9-1.31-1.82-1.44-1.82C13.55 11.62 12.25 11.53 12.25 13.44zM14.29 13.32v0.97c0 0.77-0.21 1.03-0.59 1.03c-0.38 0-0.6-0.26-0.6-1.03v-0.97c0-0.75 0.22-1.01 0.59-1.01C14.07 12.3 14.29 12.57 14.29 13.32z"/>
+                            </svg>
+                        </button>
+
+                        <div class="volume-control">
+                            <button class="volume-btn" @onclick="ToggleMute" @onclick:stopPropagation="true">
+                                @if (isMuted || volume == 0)
+                                {
+                                    <svg viewBox="0 0 24 24">
+                                        <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+                                    </svg>
+                                }
+                                else if (volume < 0.5)
+                                {
+                                    <svg viewBox="0 0 24 24">
+                                        <path d="M7 9v6h4l5 5V4l-5 5H7z"/>
+                                    </svg>
+                                }
+                                else
+                                {
+                                    <svg viewBox="0 0 24 24">
+                                        <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                                    </svg>
+                                }
+                            </button>
+                            <input type="range" 
+                                   class="volume-slider" 
+                                   min="0" 
+                                   max="100" 
+                                   step="1"
+                                   value="@((volume * 100).ToString("F0", System.Globalization.CultureInfo.InvariantCulture))"
+                                   style="--volume-percent: @((volume * 100).ToString("F0", System.Globalization.CultureInfo.InvariantCulture))"
+                                   @oninput="OnVolumeChange"
+                                   @ontouchstart="OnVolumeInteractionStart"
+                                   @ontouchend="OnVolumeInteractionEnd"
+                                   @onmousedown="OnVolumeInteractionStart"
+                                   @onmouseup="OnVolumeInteractionEnd">
+                        </div>
+
+                        <span class="time-display">
+                            @FormatTime(currentTime) / @FormatTime(duration)
+                        </span>
+                    </div>
+
+                    <div class="controls-right">
+                        <div class="speed-control" @onclick:stopPropagation="true">
+                            <button class="speed-btn" @onclick="ToggleSpeedMenu" @onclick:stopPropagation="true" title="Playback Speed">
+                                <svg viewBox="0 0 24 24">
+                                    <path d="M20.38,8.57l-1.23,1.85a8,8,0,0,1-.22,7.58H5.07A8,8,0,0,1,15.58,6.85l1.85-1.23A10,10,0,0,0,3.35,19a2,2,0,0,0,1.72,1h13.85a2,2,0,0,0,1.74-1,10,10,0,0,0-.27-10.44Z"/>
+                                    <path d="M10.59,15.41a2,2,0,0,0,2.83,0l5.66-8.49-8.49,5.66A2,2,0,0,0,10.59,15.41Z"/>
+                                </svg>
+                            </button>
+                            <div class="speed-menu @(showSpeedMenu ? "active" : "")" @onclick:stopPropagation="true">
+                                @foreach (var speed in speeds)
+                                {
+                                    <div class="speed-option @(playbackSpeed == speed ? "active" : "")" 
+                                         @onmousedown="OnSpeedInteractionStart"
+                                         @onmouseup="OnSpeedInteractionEnd"
+                                         @ontouchstart="OnSpeedInteractionStart"
+                                         @ontouchend="OnSpeedInteractionEnd"
+                                         @onclick="() => SetPlaybackSpeed(speed)"
+                                         @onclick:stopPropagation="true">
+                                        @(speed)x
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        <button class="fullscreen-btn" @onclick="ToggleFullscreen" title="Fullscreen">
+                            @if (isFullscreen)
+                            {
+                                <svg viewBox="0 0 24 24">
+                                    <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>
+                                </svg>
+                            }
+                            else
+                            {
+                                <svg viewBox="0 0 24 24">
+                                    <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+                                </svg>
+                            }
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int MovieId { get; set; }
+    
+    private Movie? movie;
+    private string? videoUrl;
+    private bool isLoading = true;
+    private int lastMovieId = -1;
+    
+    private bool isPaused = false;
+    private bool isMuted = false;
+    private bool isFullscreen = false;
+    private bool isBuffering = false;
+    private bool showControls = true;
+    private bool showSpeedMenu = false;
+    
+    private double currentTime = 0;
+    private double duration = 0;
+    private double volume = 1;
+    private double playbackSpeed = 1;
+    private double bufferedPercent = 0;
+    private double progressPercent = 0;
+    
+    private readonly double[] speeds = { 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2 };
+    
+    private System.Threading.Timer? updateTimer;
+    private System.Timers.Timer? saveTimer;
+    private bool isInitialized = false;
+    private bool isVolumeInteracting = false;
+    private DateTime lastVolumeChangeFromKeyboard = DateTime.MinValue;
+    
+    private DotNetObjectReference<Watch>? dotNetReference;
+    private string? userId;
+    private double savedStartTime = 0;
+    
+    private double lastTrackedPosition = 0;
+    private double accumulatedWatchTime = 0;
+    
+    protected override async Task OnParametersSetAsync()
+    {
+        if (MovieId != lastMovieId)
+        {
+            Console.WriteLine($"Movie ID changed from {lastMovieId} to {MovieId}");
+            lastMovieId = MovieId;
+            
+            await ResetPlayer();
+            await LoadMovie();
+        }
+    }
+    
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        
+        Console.WriteLine($"User authenticated - userId: {userId}");
+        
+        lastMovieId = MovieId;
+        await LoadMovie();
+    }
+    
+    private async Task ResetPlayer()
+    {
+        try
+        {
+            if (isInitialized)
+            {
+                await JS.InvokeVoidAsync("videoPlayer.reset");
+                await JS.InvokeVoidAsync("cleanupSpeedMenuClickOutside");
+            }
+            
+            isPaused = false;
+            isMuted = false;
+            isFullscreen = false;
+            isBuffering = false;
+            showControls = true;
+            showSpeedMenu = false;
+            currentTime = 0;
+            duration = 0;
+            volume = 1;
+            playbackSpeed = 1;
+            bufferedPercent = 0;
+            progressPercent = 0;
+            isInitialized = false;
+            savedStartTime = 0;
+            
+            lastTrackedPosition = 0;
+            accumulatedWatchTime = 0;
+            
+            saveTimer?.Stop();
+            saveTimer?.Dispose();
+            saveTimer = null;
+            
+            updateTimer?.Dispose();
+            updateTimer = null;
+            
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error resetting player: {ex.Message}");
+        }
+    }
+    
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (movie != null && !string.IsNullOrEmpty(videoUrl))
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("eval", "document.body.classList.add('video-playing');");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error adding video-playing class: {ex.Message}");
+            }
+        }
+        
+        if (!isInitialized && movie != null && !string.IsNullOrEmpty(videoUrl))
+        {
+            try
+            {
+                isInitialized = true;
+                
+                await Task.Delay(500);
+                
+                var initialized = await JS.InvokeAsync<bool>("videoPlayer.init");
+                
+                if (initialized)
+                {
+                    Console.WriteLine("Video player initialized successfully");
+                    
+                    dotNetReference = DotNetObjectReference.Create(this);
+                    
+                    await JS.InvokeVoidAsync("setupSpeedMenuClickOutside", dotNetReference);
+                    await JS.InvokeVoidAsync("setupVolumeChangeCallback", dotNetReference);
+                    
+                    updateTimer = new System.Threading.Timer(async _ =>
+                    {
+                        if (isInitialized)
+                        {
+                            await InvokeAsync(async () => await UpdateVideoState());
+                        }
+                    }, null, TimeSpan.FromMilliseconds(250), TimeSpan.FromMilliseconds(250));
+                    
+                    saveTimer = new System.Timers.Timer(10000);
+                    saveTimer.Elapsed += async (sender, e) => 
+                    {
+                        try
+                        {
+                            await InvokeAsync(async () => await SaveWatchProgress());
+                        }
+                        catch { }
+                    };
+                    saveTimer.Start();
+                    
+                    if (savedStartTime > 0)
+                    {
+                        try
+                        {
+                            var maxAttempts = 20;
+                            var attemptDelay = 250;
+                            var seeked = false;
+                            
+                            for (int i = 0; i < maxAttempts && !seeked; i++)
+                            {
+                                await Task.Delay(attemptDelay);
+                                
+                                var duration = await JS.InvokeAsync<double>("eval", "document.querySelector('.custom-video')?.duration || 0");
+                                var readyState = await JS.InvokeAsync<int>("eval", "document.querySelector('.custom-video')?.readyState || 0");
+                                
+                                if (duration > 0 && readyState >= 2)
+                                {
+                                    await JS.InvokeVoidAsync("videoPlayer.seek", savedStartTime);
+                                    Console.WriteLine($"Seeked to saved position: {savedStartTime}s (attempt {i + 1})");
+                                    seeked = true;
+                                }
+                            }
+                            
+                            if (!seeked)
+                            {
+                                Console.WriteLine($"Failed to seek to saved position after {maxAttempts} attempts");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Error seeking to saved position: {ex.Message}");
+                        }
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("Video player initialization failed, retrying...");
+                    isInitialized = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error initializing video player: {ex.Message}");
+                isInitialized = false;
+            }
+        }
+    }
+    
+    [JSInvokable]
+    public void CloseSpeedMenuFromJS()
+    {
+        if (showSpeedMenu)
+        {
+            showSpeedMenu = false;
+            StateHasChanged();
+        }
+    }
+    
+    [JSInvokable]
+    public void OnVolumeChangeFromKeyboard(double newVolume, bool muted)
+    {
+        lastVolumeChangeFromKeyboard = DateTime.Now;
+        volume = newVolume;
+        isMuted = muted;
+        StateHasChanged();
+    }
+    
+    private async Task LoadMovie()
+    {
+        try
+        {
+            movie = await DbContext.Movies
+                .FirstOrDefaultAsync(m => m.Id == MovieId);
+            
+            if (movie != null)
+            {
+                videoUrl = FormatVideoPath(movie.VideoUrl);
+                
+                if (!string.IsNullOrEmpty(userId))
+                {
+                    var watchProgress = await DbContext.MovieUserWatchingRels
+                        .FirstOrDefaultAsync(w => w.MovieFk == MovieId && w.UserFk == userId);
+                    
+                    if (watchProgress != null)
+                    {
+                        savedStartTime = watchProgress.MovieTime.TotalSeconds;
+                        Console.WriteLine($"Found saved progress: {savedStartTime}s");
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading movie: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+    
+    private async Task SaveWatchProgress()
+    {
+        Console.WriteLine($"SaveWatchProgress called - userId: {userId}, isPaused: {isPaused}, currentTime: {currentTime}");
+        
+        if (string.IsNullOrEmpty(userId) || movie == null || isPaused || currentTime <= 0)
+        {
+            Console.WriteLine($"Skipping save - userId null: {string.IsNullOrEmpty(userId)}, movie null: {movie == null}, isPaused: {isPaused}, currentTime: {currentTime}");
+            return;
+        }
+
+        try
+        {
+            var existing = await DbContext.MovieUserWatchingRels
+                .FirstOrDefaultAsync(w => w.MovieFk == MovieId && w.UserFk == userId);
+
+            if (existing != null)
+            {
+                existing.MovieTime = TimeSpan.FromSeconds(currentTime);
+                existing.UpdatedDate = DateTime.Now;
+            }
+            else
+            {
+                DbContext.MovieUserWatchingRels.Add(new MovieUserWatching_Rel
+                {
+                    MovieFk = MovieId,
+                    UserFk = userId,
+                    MovieTime = TimeSpan.FromSeconds(currentTime),
+                    MovieTimeMax = TimeSpan.FromSeconds(duration),
+                    UpdatedDate = DateTime.Now
+                });
+            }
+
+            await DbContext.SaveChangesAsync();
+            Console.WriteLine($"Saved watch progress: {currentTime}s");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving watch progress: {ex.Message}");
+        }
+    }
+    
+    private async Task SaveWatchTimeMinutes(int minutes)
+    {
+        if (string.IsNullOrEmpty(userId) || minutes <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var user = await DbContext.Users.FirstOrDefaultAsync(u => u.Uid == userId);
+            if (user != null)
+            {
+                user.WatchTimeTotal += minutes;
+                user.WatchTimeBalance += minutes;
+                await DbContext.SaveChangesAsync();
+                Console.WriteLine($"Added {minutes} minutes to watch time. Total: {user.WatchTimeTotal}, Balance: {user.WatchTimeBalance}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving watch time minutes: {ex.Message}");
+        }
+    }
+    
+    private string FormatVideoPath(string originalPath)
+    {
+        if (string.IsNullOrEmpty(originalPath))
+            return string.Empty;
+        
+        string formattedPath = originalPath.Replace(@"\\MSTNAS01\Torrents\", "/images/");
+        formattedPath = formattedPath.Replace('\\', '/');
+        
+        return formattedPath;
+    }
+    
+    private string FormatTime(double seconds)
+    {
+        var time = TimeSpan.FromSeconds(seconds);
+        return time.TotalHours >= 1 
+            ? $"{(int)time.TotalHours}:{time.Minutes:00}:{time.Seconds:00}"
+            : $"{time.Minutes}:{time.Seconds:00}";
+    }
+    
+    private async void OnLoadedMetadata()
+    {
+        await UpdateVideoState();
+    }
+    
+    private async void OnTimeUpdate()
+    {
+        await UpdateVideoState();
+    }
+    
+    private async void OnProgress()
+    {
+        await UpdateVideoState();
+    }
+    
+    private async Task UpdateVideoState()
+    {
+        try
+        {
+            var state = await JS.InvokeAsync<VideoState>("videoPlayer.getState");
+            if (state != null)
+            {
+                currentTime = state.CurrentTime;
+                duration = state.Duration;
+                isPaused = state.Paused;
+                isMuted = state.Muted;
+                if (!isVolumeInteracting && (DateTime.Now - lastVolumeChangeFromKeyboard).TotalMilliseconds > 200) volume = state.Volume;
+                playbackSpeed = state.PlaybackRate;
+                isFullscreen = state.IsFullscreen;
+                showControls = state.ShowControls;
+                
+                if (duration > 0)
+                {
+                    progressPercent = (currentTime / duration) * 100;
+                    bufferedPercent = (state.Buffered / duration) * 100;
+                }
+                
+                if (!isPaused && lastTrackedPosition > 0)
+                {
+                    var positionDiff = currentTime - lastTrackedPosition;
+                    
+                    if (positionDiff > 0 && positionDiff <= 2)
+                    {
+                        accumulatedWatchTime += positionDiff;
+                        
+                        if (accumulatedWatchTime >= 60)
+                        {
+                            var minutesToAdd = (int)(accumulatedWatchTime / 60);
+                            accumulatedWatchTime %= 60;
+                            await SaveWatchTimeMinutes(minutesToAdd);
+                        }
+                    }
+                }
+                
+                if (!isPaused)
+                {
+                    lastTrackedPosition = currentTime;
+                }
+                
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch
+        {
+        }
+    }
+    
+    private void OnVideoEnded()
+    {
+        isPaused = true;
+        currentTime = 0;
+        progressPercent = 0;
+        StateHasChanged();
+    }
+    
+    private async Task TogglePlayPause()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("videoPlayer.togglePlayPause");
+            await UpdateVideoState();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error toggling play/pause: {ex.Message}");
+        }
+    }
+
+    private async Task SkipTimeWithFeedback(double seconds)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("videoPlayer.skip", seconds);
+            await JS.InvokeVoidAsync("videoPlayer.showSkipFeedback", seconds);
+            await UpdateVideoState();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error skipping time: {ex.Message}");
+        }
+    }
+    
+    private async Task SeekVideo(MouseEventArgs e)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("videoPlayer.seekByClick", e.ClientX);
+            await UpdateVideoState();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error seeking video: {ex.Message}");
+        }
+    }
+    
+    private async Task OnVolumeChange(ChangeEventArgs e)
+    {
+        try
+        {
+            if (e.Value != null && double.TryParse(e.Value.ToString(), 
+                System.Globalization.NumberStyles.Any, 
+                System.Globalization.CultureInfo.InvariantCulture, 
+                out var val))
+            {
+                volume = val / 100.0;
+                await JS.InvokeVoidAsync("videoPlayer.setVolume", volume);
+                
+                await JS.InvokeVoidAsync("eval", @"
+                    if (window.videoPlayer.hideControlsTimer) {
+                        clearTimeout(window.videoPlayer.hideControlsTimer);
+                        window.videoPlayer.hideControlsTimer = null;
+                    }
+                ");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error changing volume: {ex.Message}");
+        }
+    }
+    
+    private async Task OnVolumeInteractionStart()
+    {
+        isVolumeInteracting = true;
+        try
+        {
+            await JS.InvokeVoidAsync("eval", @"
+                if (window.videoPlayer.hideControlsTimer) {
+                    clearTimeout(window.videoPlayer.hideControlsTimer);
+                    window.videoPlayer.hideControlsTimer = null;
+                }
+                window.videoPlayer._volumeInteracting = true;
+            ");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error on volume interaction start: {ex.Message}");
+        }
+    }
+    
+    private async Task OnVolumeInteractionEnd()
+    {
+        isVolumeInteracting = false;
+        try
+        {
+            await JS.InvokeVoidAsync("eval", @"
+                window.videoPlayer._volumeInteracting = false;
+            ");
+            await JS.InvokeVoidAsync("videoPlayer.showControlsTemporarily");
+            await UpdateVideoState();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error on volume interaction end: {ex.Message}");
+        }
+    }
+    
+    private async Task ToggleMute()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("videoPlayer.toggleMute");
+            await UpdateVideoState();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error toggling mute: {ex.Message}");
+        }
+    }
+    
+    private async Task OnSpeedInteractionStart()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("eval", @"
+                if (window.videoPlayer.hideControlsTimer) {
+                    clearTimeout(window.videoPlayer.hideControlsTimer);
+                    window.videoPlayer.hideControlsTimer = null;
+                }
+                window.videoPlayer._speedInteracting = true;
+            ");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error on speed interaction start: {ex.Message}");
+        }
+    }
+    
+    private async Task OnSpeedInteractionEnd()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("eval", @"
+                window.videoPlayer._speedInteracting = false;
+            ");
+            await JS.InvokeVoidAsync("videoPlayer.showControlsTemporarily");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error on speed interaction end: {ex.Message}");
+        }
+    }
+    
+    private async Task SetPlaybackSpeed(double speed)
+    {
+        try
+        {
+            playbackSpeed = speed;
+            showSpeedMenu = false;
+            await JS.InvokeVoidAsync("videoPlayer.setPlaybackRate", speed);
+            
+            await JS.InvokeVoidAsync("eval", @"
+                window.videoPlayer._speedInteracting = false;
+            ");
+            await JS.InvokeVoidAsync("videoPlayer.showControlsTemporarily");
+            
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error setting playback speed: {ex.Message}");
+        }
+    }
+    
+    private async Task ToggleSpeedMenu()
+    {
+        showSpeedMenu = !showSpeedMenu;
+        StateHasChanged();
+        
+        if (showSpeedMenu)
+        {
+            await Task.Delay(10);
+            await JS.InvokeVoidAsync("eval", @"
+                const speedMenu = document.querySelector('.speed-menu');
+                if (speedMenu) {
+                    speedMenu.scrollTop = 0;
+                }
+            ");
+        }
+    }
+    
+    private async Task ToggleFullscreen()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("videoPlayer.toggleFullscreen");
+            await UpdateVideoState();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error toggling fullscreen: {ex.Message}");
+        }
+    }
+    
+    private void NavigateToBrowse()
+    {
+        Navigation.NavigateTo("/browse");
+    }
+    
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            saveTimer?.Stop();
+            saveTimer?.Dispose();
+            saveTimer = null;
+            
+            updateTimer?.Dispose();
+            updateTimer = null;
+            
+            await JS.InvokeVoidAsync("eval", "document.body.classList.remove('video-playing');");
+            
+            if (isInitialized)
+            {
+                await JS.InvokeVoidAsync("videoPlayer.reset");
+                await JS.InvokeVoidAsync("cleanupSpeedMenuClickOutside");
+                await JS.InvokeVoidAsync("cleanupVolumeChangeCallback");
+            }
+            
+            dotNetReference?.Dispose();
+            
+            isInitialized = false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error during disposal: {ex.Message}");
+        }
+    }
+    
+    private class VideoState
+    {
+        public double CurrentTime { get; set; }
+        public double Duration { get; set; }
+        public bool Paused { get; set; }
+        public bool Muted { get; set; }
+        public double Volume { get; set; }
+        public double PlaybackRate { get; set; }
+        public double Buffered { get; set; }
+        public bool IsFullscreen { get; set; }
+        public bool ShowControls { get; set; }
+    }
+}

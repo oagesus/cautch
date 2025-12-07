@@ -1,0 +1,129 @@
+@page "/login"
+@inject mudblazor_cinema.Data.AppDbContext DbContext
+@inject NavigationManager Navigation
+@using Microsoft.EntityFrameworkCore
+@using BCrypt.Net
+
+<MudContainer Class="d-flex align-center justify-center" Style="height: 100vh;">
+    <MudGrid Justify="Justify.Center" Style="max-width: 500px; width: 100%;">
+        <MudItem xs="12" sm="12">
+            <MudCard Class="pa-4 py-16 pa-sm-16">
+                <EditForm Model="@model" OnValidSubmit="HandleLogin" FormName="loginForm">
+                    <MudCardContent Class="pa-0">
+                        <MudText Typo="Typo.h4">Sign In</MudText>
+                        <MudTextField Label="Username"
+                                      Class="pt-4"
+                                      Variant="Variant.Outlined"
+                                      @bind-Value="model.Username"
+                                      Error="@(!string.IsNullOrEmpty(usernameError))"
+                                      ErrorText="@usernameError"
+                                      Immediate="true"/>
+                        <MudTextField Label="Password" 
+                                      Class="pt-1"
+                                      Variant="Variant.Outlined"
+                                      @bind-Value="model.Password"
+                                      InputType="InputType.Password"
+                                      Error="@(!string.IsNullOrEmpty(passwordError))"
+                                      ErrorText="@passwordError"
+                                      Immediate="true"/>
+                    </MudCardContent>
+                    <MudCardActions Class="pa-0 pt-8">
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   FullWidth="true"
+                                   Size="Size.Large"
+                                   ButtonType="ButtonType.Submit"
+                                   Disabled="@isLoading">
+                            @if (isLoading)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                            }
+                            else
+                            {
+                                <text>Login</text>
+                            }
+                        </MudButton>
+                    </MudCardActions>
+                    <MudCheckBox @bind-Value="rememberMe" Class="pt-2">
+                        Remember me
+                    </MudCheckBox>
+                    <MudText Class="pt-16" Typo="Typo.body1">
+                        Don't have an account?
+                        <MudLink Href="/register" Typo="Typo.body1">Register&nbsp;here</MudLink>
+                    </MudText>
+                </EditForm>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+@code {
+    [SupplyParameterFromForm]
+    private LoginAccountForm model { get; set; } = new();
+    
+    private bool rememberMe = false;
+    private bool isLoading = false;
+    private string usernameError = "";
+    private string passwordError = "";
+
+    public class LoginAccountForm
+    {
+        public string Username { get; set; } = "";
+        public string Password { get; set; } = "";
+    }
+
+    private async Task HandleLogin()
+    {
+        usernameError = "";
+        passwordError = "";
+        bool hasErrors = false;
+        
+        if (string.IsNullOrWhiteSpace(model.Username))
+        {
+            usernameError = "Username is required";
+            hasErrors = true;
+        }
+        
+        if (string.IsNullOrWhiteSpace(model.Password))
+        {
+            passwordError = "Password is required";
+            hasErrors = true;
+        }
+        
+        if (hasErrors)
+        {
+            return;
+        }
+
+        isLoading = true;
+
+        try
+        {
+            var userExists = await DbContext.Users.FirstOrDefaultAsync(u => u.Uid == model.Username);
+            
+            if (userExists == null)
+            {
+                usernameError = "User not found";
+                isLoading = false;
+                return;
+            }
+
+            bool isPasswordValid = BCrypt.Verify(model.Password, userExists.Password);
+
+            if (!isPasswordValid)
+            {
+                passwordError = "Incorrect password";
+                isLoading = false;
+                return;
+            }
+            
+            Navigation.NavigateTo($"/api/account/login?uid={Uri.EscapeDataString(userExists.Uid)}&email={Uri.EscapeDataString(userExists.Email)}&isAdmin={userExists.IsAdmin}&rememberMe={rememberMe}", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            usernameError = "An error occurred";
+            Console.WriteLine($"Login error: {ex.Message}");
+            isLoading = false;
+        }
+    }
+}

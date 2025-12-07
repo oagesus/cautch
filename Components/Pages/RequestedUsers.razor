@@ -1,0 +1,300 @@
+@page "/requestedusers"
+@attribute [Authorize(Roles = "Admin")]
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using mudblazor_cinema.Models
+@using Microsoft.EntityFrameworkCore
+@inject NavigationManager Navigation
+@inject mudblazor_cinema.Data.AppDbContext DbContext
+
+<PageTitle>Requested Users</PageTitle>
+
+<MudContainer Style="padding-top: 8rem; padding-bottom: 4rem; box-sizing: border-box; min-height: 100vh; ">
+    <AuthorizeView Roles="Admin" Context="adminContext">
+        <Authorized>
+            <MudTable @ref="_table" T="Requested_User" Items="requestedUsers" 
+                     Hover="true" Striped="true" Bordered="true" Dense="true"
+                     SortLabel="Sort By" Elevation="0" AllowUnsorted="false" 
+                     Filter="new Func<Requested_User,bool>(FilterFunc)"
+                     OnRowClick="@OnRowClick"
+                     Breakpoint="Breakpoint.None">
+                <ToolBarContent>
+                    <MudText Typo="Typo.h6">User Requests</MudText>
+                    <MudSpacer />
+                    <MudTextField @bind-Value="searchString" Placeholder="Search" Adornment="Adornment.Start" 
+                                AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+                </ToolBarContent>
+                <HeaderContent>
+                    <MudTh>
+                        <MudCheckBox T="bool?" 
+                                   Value="@GetHeaderCheckboxState()" 
+                                   ValueChanged="@OnHeaderCheckboxChanged"
+                                   TriState="true"
+                                   Color="Color.Primary" />
+                    </MudTh>
+                    <MudTh><MudTableSortLabel InitialDirection="SortDirection.Ascending" SortBy="new Func<Requested_User, object>(x=>x.Uid)">User ID</MudTableSortLabel></MudTh>
+                    <MudTh><MudTableSortLabel SortBy="new Func<Requested_User, object>(x=>x.Email)">Email</MudTableSortLabel></MudTh>
+                    <MudTh><MudTableSortLabel SortBy="new Func<Requested_User, object>(x=>x.RegistrationDate)">Registration Date (dd-MM-yyyy)</MudTableSortLabel></MudTh>
+                    <MudTh>Admin</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <MudCheckBox T="bool" Value="@(selectedItems.Contains(context))"
+                                   ValueChanged="@((bool value) => OnRowCheckboxChanged(value, context))"
+                                   @onclick:stopPropagation="true"
+                                   Color="Color.Primary" />
+                    </MudTd>
+                    <MudTd DataLabel="User ID">@context.Uid</MudTd>
+                    <MudTd DataLabel="Email">@context.Email</MudTd>
+                    <MudTd DataLabel="Registration Date">@context.RegistrationDate.ToString("dd-MM-yyyy HH:mm:ss")</MudTd>
+                    <MudTd DataLabel="Admin">
+                        <MudCheckBox T="bool" 
+                                   Value="@(adminRights.ContainsKey(context.Uid) ? adminRights[context.Uid] : false)"
+                                   ValueChanged="@((bool value) => OnAdminRightsChanged(value, context.Uid))"
+                                   @onclick:stopPropagation="true"
+                                   Color="Color.Secondary" />
+                    </MudTd>
+                </RowTemplate>
+                <PagerContent>
+                    <MudTablePager PageSizeOptions="new int[]{10, 25, 50, 100}" />
+                </PagerContent>
+            </MudTable>
+            
+            <MudHidden Breakpoint="Breakpoint.SmAndDown">
+                <MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-4">
+                    <MudButton Color="Color.Success"
+                            Variant="Variant.Filled"
+                            Disabled="@(selectedItems.Count == 0)"
+                            OnClick="ApproveSelected">
+                        Approve Selected (@selectedItems.Count)
+                    </MudButton>
+                    <MudButton Color="Color.Error"
+                            Variant="Variant.Filled"
+                            Disabled="@(selectedItems.Count == 0)"
+                            OnClick="RejectSelected">
+                        Reject Selected (@selectedItems.Count)
+                    </MudButton>
+                </MudStack>
+            </MudHidden>
+            <MudHidden Breakpoint="Breakpoint.MdAndUp">
+                <MudStack Class="mt-4" Spacing="2">
+                    <MudButton Color="Color.Success"
+                            Variant="Variant.Filled"
+                            Disabled="@(selectedItems.Count == 0)"
+                            OnClick="ApproveSelected"
+                            FullWidth="true">
+                        Approve Selected (@selectedItems.Count)
+                    </MudButton>
+                    <MudButton Color="Color.Error"
+                            Variant="Variant.Filled"
+                            Disabled="@(selectedItems.Count == 0)"
+                            OnClick="RejectSelected"
+                            FullWidth="true">
+                        Reject Selected (@selectedItems.Count)
+                    </MudButton>
+                </MudStack>
+            </MudHidden>
+
+        </Authorized>
+        <NotAuthorized>
+            <MudAlert Severity="Severity.Warning" Class="mb-4">
+                You don't have access to this page.
+            </MudAlert>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" @onclick="RedirectToLogin">
+                Go to Login
+            </MudButton>
+        </NotAuthorized>
+    </AuthorizeView>
+</MudContainer>
+
+@code {
+    private HashSet<Requested_User> selectedItems = new HashSet<Requested_User>();
+    private List<Requested_User> requestedUsers = new List<Requested_User>();
+    private Dictionary<string, bool> adminRights = new Dictionary<string, bool>();
+    private string searchString = "";
+    private MudTable<Requested_User>? _table;
+
+    protected override async Task OnInitializedAsync()
+    {
+        requestedUsers = await DbContext.Requested_Users.ToListAsync();
+    }
+
+    private bool FilterFunc(Requested_User user)
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+            return true;
+        if (user.Uid.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (user.Email.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (user.RegistrationDate.ToString("dd.MM.yyyy HH:mm:ss").Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+    private bool? GetHeaderCheckboxState()
+    {
+        var filteredUsers = requestedUsers.Where(FilterFunc).ToList();
+        
+        if (!filteredUsers.Any())
+            return false;
+        
+        var selectedCount = filteredUsers.Count(u => selectedItems.Contains(u));
+        
+        if (selectedCount == 0)
+            return false;
+        else if (selectedCount == filteredUsers.Count)
+            return true;
+        else
+            return null;
+    }
+
+    private void OnHeaderCheckboxChanged(bool? value)
+    {
+        var filteredUsers = requestedUsers.Where(FilterFunc).ToList();
+        var selectedCount = filteredUsers.Count(u => selectedItems.Contains(u));
+        
+        if (selectedCount == 0)
+        {
+            selectedItems = new HashSet<Requested_User>(filteredUsers);
+        }
+        else
+        {
+            selectedItems.Clear();
+        }
+        StateHasChanged();
+    }
+
+    private void OnRowCheckboxChanged(bool value, Requested_User user)
+    {
+        if (value)
+        {
+            selectedItems.Add(user);
+        }
+        else
+        {
+            selectedItems.Remove(user);
+        }
+        StateHasChanged();
+    }
+
+    private void OnAdminRightsChanged(bool value, string userId)
+    {
+        adminRights[userId] = value;
+        StateHasChanged();
+    }
+
+    private void OnRowClick(TableRowClickEventArgs<Requested_User> args)
+    {
+        if (args.Item == null) return;
+        
+        if (selectedItems.Contains(args.Item))
+        {
+            selectedItems.Remove(args.Item);
+        }
+        else
+        {
+            selectedItems.Add(args.Item);
+        }
+        StateHasChanged();
+    }
+
+    private async Task ApproveSelected()
+    {
+        if (selectedItems?.Count > 0)
+        {
+            try
+            {
+                foreach (var requestedUser in selectedItems)
+                {
+                    Console.WriteLine($"Approving user: {requestedUser.Email}");
+                    
+                    // Get admin status from the dictionary (default to false if not set)
+                    bool isAdmin = adminRights.ContainsKey(requestedUser.Uid) ? adminRights[requestedUser.Uid] : false;
+                    
+                    // Create new User entity from Requested_User
+                    var newUser = new User
+                    {
+                        Uid = requestedUser.Uid,
+                        Email = requestedUser.Email,
+                        Password = requestedUser.Password, // Already hashed
+                        RegistrationDate = DateTime.UtcNow, // Use current time for actual registration
+                        IsAdmin = isAdmin // Use the value from the checkbox
+                    };
+                    
+                    // Add to Users table
+                    DbContext.Users.Add(newUser);
+                    
+                    // Remove from Requested_Users table
+                    DbContext.Requested_Users.Remove(requestedUser);
+                }
+                
+                // Save all changes to database
+                await DbContext.SaveChangesAsync();
+                
+                // Update UI: Remove approved users from the list
+                requestedUsers.RemoveAll(u => selectedItems.Contains(u));
+                
+                // Clean up admin rights dictionary
+                foreach (var user in selectedItems)
+                {
+                    adminRights.Remove(user.Uid);
+                }
+                
+                selectedItems.Clear();
+                StateHasChanged();
+                
+                Console.WriteLine($"Successfully approved users");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error approving users: {ex.Message}");
+                // TODO: Show error message to user via Snackbar or Alert
+            }
+        }
+    }
+
+    private async Task RejectSelected()
+    {
+        if (selectedItems?.Count > 0)
+        {
+            try
+            {
+                foreach (var requestedUser in selectedItems)
+                {
+                    Console.WriteLine($"Rejecting user: {requestedUser.Email}");
+                    
+                    // Remove from Requested_Users table (don't add to Users table)
+                    DbContext.Requested_Users.Remove(requestedUser);
+                }
+                
+                // Save all changes to database
+                await DbContext.SaveChangesAsync();
+                
+                // Update UI: Remove rejected users from the list
+                requestedUsers.RemoveAll(u => selectedItems.Contains(u));
+                
+                // Clean up admin rights dictionary
+                foreach (var user in selectedItems)
+                {
+                    adminRights.Remove(user.Uid);
+                }
+                
+                selectedItems.Clear();
+                StateHasChanged();
+                
+                Console.WriteLine($"Successfully rejected users");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error rejecting users: {ex.Message}");
+                // TODO: Show error message to user via Snackbar or Alert
+            }
+        }
+    }
+
+    private void RedirectToLogin()
+    {
+        Navigation.NavigateTo("/login");
+    }
+}

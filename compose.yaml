@@ -1,0 +1,12 @@
+services:
+  server:
+    build:
+      context: .
+      target: final
+    ports:
+      - 8080:8080
+    volumes:
+      - app_data:/app/App_Data
+
+volumes:
+  app_data:

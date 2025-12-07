@@ -1,0 +1,55 @@
+﻿@page "/"
+@using Microsoft.AspNetCore.Components.Authorization
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+
+<PageTitle>Home</PageTitle>
+
+@if (!_isRedirecting)
+{
+    <MudContainer Class="d-flex flex-column align-center justify-center" Style="height: 100vh;">
+
+        <MudGrid Justify="Justify.Center" Style="max-width: 500px; width: 100%;">
+            <MudItem xs="12" sm="12">
+                <MudCard Class="pa-4 py-16 pa-sm-16">
+                    <MudCardContent Class="pa-0">
+                        <MudStack Spacing="4" AlignItems="AlignItems.Center">
+                            <MudText Typo="Typo.h4" Align="Align.Center">
+                                Welcome to Cautch
+                            </MudText>
+                            <MudText Typo="Typo.body1" Align="Align.Center" Color="Color.Secondary">
+                                Watch anywhere. At anytime.
+                            </MudText>
+                        </MudStack>
+                    </MudCardContent>
+                    <MudCardActions Class="pa-0 pt-8 d-flex justify-center">
+                        <MudStack Row="true" Spacing="2">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/login" StartIcon="@Icons.Material.Filled.Login">
+                                Login
+                            </MudButton>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/register" StartIcon="@Icons.Material.Filled.PersonAdd">
+                                Register
+                            </MudButton>
+                        </MudStack>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+    </MudContainer>
+}
+
+@code {
+    private bool _isRedirecting = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _isRedirecting = true;
+            Navigation.NavigateTo("/browse", forceLoad: true);
+        }
+    }
+}

@@ -1,0 +1,19 @@
+@inherits LayoutComponentBase
+@using mudblazor_cinema.Services
+@inject ThemeService ThemeService
+
+<MudThemeProvider Theme="@ThemeService.Theme" IsDarkMode="ThemeService.IsDarkMode" />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudMainContent Class="pt-0">
+    @Body
+</MudMainContent>
+
+@code {
+    protected override void OnInitialized()
+    {
+        // Theme Service initialisieren, damit das gespeicherte Theme geladen wird
+        StateHasChanged();
+    }
+}

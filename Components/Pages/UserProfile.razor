@@ -1,0 +1,354 @@
+@page "/userprofile"
+@layout mudblazor_cinema.Components.Layout.MainLayout
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using mudblazor_cinema.Models
+@using Microsoft.EntityFrameworkCore
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+@inject mudblazor_cinema.Data.AppDbContext DbContext
+@inject ISnackbar Snackbar
+
+<PageTitle>User Profile</PageTitle>
+
+<style>
+    .hover-scale {
+        transition: transform 0.2s ease;
+        cursor: pointer;
+    }
+    
+    .hover-scale:hover {
+        transform: scale(1.2);
+    }
+</style>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="pt-20 pb-4">
+    @if (isLoading)
+    {
+        <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+    }
+    else
+    {
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" 
+                       Color="Color.Primary" 
+                       Size="Size.Large"
+                       OnClick="@(() => Navigation.NavigateTo("/browse"))" />
+        
+        <MudStack Spacing="4">
+            <MudText Typo="Typo.h4">@currentUsername</MudText>
+            
+            @if (!string.IsNullOrEmpty(currentAvatarUrl))
+            {
+                <img src="@currentAvatarUrl" alt="Current Avatar" style="width: 150px; height: 150px; border-radius: 8px; object-fit: cover;" />
+            }
+            
+            <MudStack Spacing="2" Style="max-width: 400px;">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                    <MudText Typo="Typo.h5">Level @((userWatchTimeTotal / 100))</MudText>
+                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-secondary);">@((userWatchTimeTotal % 100))/100 XP</MudText>
+                </MudStack>
+                <MudProgressLinear Value="@((userWatchTimeTotal % 100))" Min="0" Max="100" Color="Color.Primary" Size="Size.Medium" />
+            </MudStack>
+            
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Style="max-width: 400px;">
+                <MudText Typo="Typo.h5">Balance: </MudText>
+                <MudSpacer />
+                <MudIcon Icon="@Icons.Material.Filled.EventSeat" 
+                         Size="Size.Medium" 
+                         Color="Color.Warning" 
+                         Title="Cautch Coins"
+                         Class="hover-scale" />
+                <MudText Typo="Typo.body1">@userWatchTimeBalance</MudText>
+            </MudStack>
+            
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Style="max-width: 400px;">
+                <MudText Typo="Typo.h5">Watch Time: </MudText>
+                <MudSpacer />
+                <MudText Typo="Typo.body1">@((userWatchTimeTotal / 60.0).ToString("F1")) Hours</MudText>
+            </MudStack>
+
+            <MudDivider />
+
+            <MudText Typo="Typo.h5">Available Avatars</MudText>
+            <MudGrid>
+                <MudItem xs="12" md="4">
+                    <MudSelect T="string" Value="@sortOption" ValueChanged="OnSortChanged" Label="Sort By" Variant="Variant.Outlined" Dense="true" FullWidth="true">
+                        <MudSelectItem Value="@("alphabetical")">Category</MudSelectItem>
+                        <MudSelectItem Value="@("price_high")">Price (Highest)</MudSelectItem>
+                        <MudSelectItem Value="@("price_low")">Price (Lowest)</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            @if (sortOption == "alphabetical")
+            {
+                @foreach (var category in GetSortedCategories())
+                {
+                    <MudText Typo="Typo.h6" Class="mt-4 mb-2">@category</MudText>
+                    <MudGrid>
+                        @foreach (var avatar in GetAvatarsByCategory(category))
+                        {
+                            <MudItem xs="6" sm="4" md="3" lg="2">
+                                <MudPaper Class="pa-4 d-flex flex-column align-center" Style="gap: 8px;">
+                                    <img src="@FormatAvatarPath(avatar.ImageUrl)" alt="Avatar" style="width: 100px; height: 100px; border-radius: 8px; object-fit: cover;" />
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                        <MudIcon Icon="@Icons.Material.Filled.EventSeat" 
+                                                 Size="Size.Small" 
+                                                 Color="Color.Warning" 
+                                                 Title="Cautch Coins"
+                                                 Class="hover-scale" />
+                                        <MudText Typo="Typo.body2">@avatar.WatchTimeCost</MudText>
+                                    </MudStack>
+                                    <MudButton Color="Color.Primary" 
+                                              Variant="Variant.Filled" 
+                                              Size="Size.Small"
+                                              OnClick="@(() => UnlockAvatar(avatar.Id, avatar.WatchTimeCost))"
+                                              Disabled="@(userWatchTimeBalance < avatar.WatchTimeCost)">
+                                        Unlock
+                                    </MudButton>
+                                </MudPaper>
+                            </MudItem>
+                        }
+                    </MudGrid>
+                }
+            }
+            else
+            {
+                <MudText Typo="Typo.h6" Class="mt-4 mb-2">Available Characters</MudText>
+                <MudGrid>
+                    @foreach (var avatar in GetAvatarsByPrice())
+                    {
+                        <MudItem xs="6" sm="4" md="3" lg="2">
+                            <MudPaper Class="pa-4 d-flex flex-column align-center" Style="gap: 8px;">
+                                <img src="@FormatAvatarPath(avatar.ImageUrl)" alt="Avatar" style="width: 100px; height: 100px; border-radius: 8px; object-fit: cover;" />
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                    <MudIcon Icon="@Icons.Material.Filled.EventSeat" 
+                                             Size="Size.Small" 
+                                             Color="Color.Warning" 
+                                             Title="Cautch Coins"
+                                             Class="hover-scale" />
+                                    <MudText Typo="Typo.body2">@avatar.WatchTimeCost</MudText>
+                                </MudStack>
+                                <MudButton Color="Color.Primary" 
+                                          Variant="Variant.Filled" 
+                                          Size="Size.Small"
+                                          OnClick="@(() => UnlockAvatar(avatar.Id, avatar.WatchTimeCost))"
+                                          Disabled="@(userWatchTimeBalance < avatar.WatchTimeCost)">
+                                    Unlock
+                                </MudButton>
+                            </MudPaper>
+                        </MudItem>
+                    }
+                </MudGrid>
+            }
+
+            <MudDivider />
+
+            <MudText Typo="Typo.h5">Unlocked Avatars</MudText>
+            <MudGrid>
+                @foreach (var avatar in unlockedAvatars)
+                {
+                    <MudItem xs="6" sm="4" md="3" lg="2">
+                        <MudPaper Class="pa-4 d-flex flex-column align-center" Style="gap: 8px;">
+                            <img src="@FormatAvatarPath(avatar.ImageUrl)" alt="Avatar" style="width: 100px; height: 100px; border-radius: 8px; object-fit: cover;" />
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                <MudIcon Icon="@Icons.Material.Filled.EventSeat" 
+                                         Size="Size.Small" 
+                                         Style="color: var(--mud-palette-text-disabled);"
+                                         Title="Cautch Coins" />
+                                <MudText Typo="Typo.body2" 
+                                         Style="color: var(--mud-palette-text-disabled);">
+                                    @avatar.WatchTimeCost
+                                </MudText>
+                            </MudStack>
+                            <MudButton Color="Color.Success" 
+                                      Variant="Variant.Filled" 
+                                      Size="Size.Small"
+                                      Disabled="@(avatar.Id == currentAvatarId)"
+                                      OnClick="@(() => SelectAvatar(avatar.Id))">
+                                @(avatar.Id == currentAvatarId ? "Selected" : "Select")
+                            </MudButton>
+                        </MudPaper>
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudStack>
+    }
+</MudContainer>
+
+@code {
+    private string currentUsername = string.Empty;
+    private string currentAvatarUrl = string.Empty;
+    private int userWatchTimeTotal = 0;
+    private int userWatchTimeBalance = 0;
+    private bool isLoading = true;
+    private int currentAvatarId = 0;
+    private string sortOption = "alphabetical";
+    
+    private List<AvatarPicture> lockedAvatars = new();
+    private List<AvatarPicture> unlockedAvatars = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        currentUsername = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+
+        await LoadUserData();
+        isLoading = false;
+    }
+
+    private async Task LoadUserData()
+    {
+        var user = await DbContext.Users
+            .Include(u => u.CurrentAvatar)
+            .Include(u => u.UserAvatars)
+            .FirstOrDefaultAsync(u => u.Uid == currentUsername);
+
+        if (user != null)
+        {
+            userWatchTimeTotal = user.WatchTimeTotal;
+            userWatchTimeBalance = user.WatchTimeBalance;
+            currentAvatarId = user.CurrentAvatarFk;
+            
+            if (user.CurrentAvatar != null)
+            {
+                currentAvatarUrl = FormatAvatarPath(user.CurrentAvatar.ImageUrl);
+            }
+
+            var allAvatars = await DbContext.AvatarPictures.ToListAsync();
+            var unlockedIds = user.UserAvatars.Select(ua => ua.AvatarFk).ToHashSet();
+
+            var now = DateTime.Now;
+            unlockedAvatars = allAvatars
+                .Where(a => a.WatchTimeCost == 0 || unlockedIds.Contains(a.Id))
+                .Where(a => (a.AvailableFrom == null || a.AvailableFrom <= now) &&
+                           (a.AvailableUntil == null || a.AvailableUntil >= now) ||
+                           unlockedIds.Contains(a.Id))
+                .ToList();
+
+            lockedAvatars = allAvatars
+                .Where(a => a.WatchTimeCost > 0 && !unlockedIds.Contains(a.Id))
+                .Where(a => (a.AvailableFrom == null || a.AvailableFrom <= now) &&
+                           (a.AvailableUntil == null || a.AvailableUntil >= now))
+                .ToList();
+        }
+    }
+
+    private void OnSortChanged(string newValue)
+    {
+        sortOption = newValue;
+        StateHasChanged();
+    }
+
+    private List<string> GetSortedCategories()
+    {
+        var categories = lockedAvatars
+            .Select(a => a.Category)
+            .Distinct()
+            .ToList();
+
+        var sortedCategories = new List<string>();
+        
+        if (categories.Contains("Default"))
+        {
+            sortedCategories.Add("Default");
+        }
+        
+        sortedCategories.AddRange(categories
+            .Where(c => c != "Default")
+            .OrderBy(c => c));
+        
+        return sortedCategories;
+    }
+
+    private List<AvatarPicture> GetAvatarsByCategory(string category)
+    {
+        return lockedAvatars
+            .Where(a => a.Category == category)
+            .OrderByDescending(a => a.WatchTimeCost)
+            .ToList();
+    }
+
+    private List<AvatarPicture> GetAvatarsByPrice()
+    {
+        if (sortOption == "price_high")
+        {
+            return lockedAvatars
+                .OrderByDescending(a => a.WatchTimeCost)
+                .ToList();
+        }
+        else
+        {
+            return lockedAvatars
+                .OrderBy(a => a.WatchTimeCost)
+                .ToList();
+        }
+    }
+
+    private async Task UnlockAvatar(int avatarId, int cost)
+    {
+        if (userWatchTimeBalance < cost)
+        {
+            Snackbar.Add("Not enough balance!", Severity.Error);
+            return;
+        }
+
+        try
+        {
+            var user = await DbContext.Users.FirstOrDefaultAsync(u => u.Uid == currentUsername);
+            if (user == null) return;
+
+            user.WatchTimeBalance -= cost;
+
+            DbContext.UserAvatarPictureRels.Add(new UserAvatarPicture_Rel
+            {
+                UserFk = currentUsername,
+                AvatarFk = avatarId,
+                UnlockedAt = DateTime.Now
+            });
+
+            await DbContext.SaveChangesAsync();
+            
+            userWatchTimeBalance = user.WatchTimeBalance;
+            await LoadUserData();
+            
+            Snackbar.Add("Avatar unlocked!", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task SelectAvatar(int avatarId)
+    {
+        try
+        {
+            var user = await DbContext.Users.FirstOrDefaultAsync(u => u.Uid == currentUsername);
+            if (user == null) return;
+
+            user.CurrentAvatarFk = avatarId;
+            await DbContext.SaveChangesAsync();
+
+            await LoadUserData();
+            
+            Snackbar.Add("Avatar selected!", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private string FormatAvatarPath(string originalPath)
+    {
+        if (string.IsNullOrEmpty(originalPath))
+            return string.Empty;
+        
+        string formattedPath = originalPath.Replace(@"\\MSTNAS01\Torrents\", "/images/");
+        formattedPath = formattedPath.Replace('\\', '/');
+        
+        return formattedPath;
+    }
+}

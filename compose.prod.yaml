@@ -1,0 +1,16 @@
+services:
+  server:
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__PostgresConnection=Host=VMSTSSQL01;Port=5432;Database=mudblazor_cinema;Username=postgres;Password=${POSTGRES_PASSWORD}
+    volumes:
+      - nas_share:/app/images:ro
+    restart: always
+
+volumes:
+  nas_share:
+    driver: local
+    driver_opts:
+      type: cifs
+      o: "username=${SMB_USER},password=${SMB_PASSWORD},vers=3.0"
+      device: "//MSTNAS01/Torrents"

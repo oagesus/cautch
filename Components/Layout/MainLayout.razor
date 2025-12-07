@@ -1,0 +1,232 @@
+﻿@inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Authorization
+@using mudblazor_cinema.Services
+@inject mudblazor_cinema.Services.ThemeService ThemeService
+@inject NavigationManager Navigation
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@implements IDisposable
+
+<MudThemeProvider Theme="@ThemeService.Theme" IsDarkMode="ThemeService.IsDarkMode" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <AuthorizeView>
+        <Authorized>
+            <MudAppBar Elevation="1" Fixed="false" Style="position: absolute; top: 0; left: 0; right: 0; z-index: 1100;">
+                <AuthorizeView Roles="Admin" Context="adminContext">
+                    <Authorized>
+                        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
+                    </Authorized>
+                </AuthorizeView>
+                
+                <MudHidden Breakpoint="Breakpoint.SmAndDown">
+                    <AuthorizeView Roles="Admin" Context="adminTextContext">
+                        <Authorized>
+                            <MudLink Href="/" Typo="Typo.h5" Color="Color.Inherit" Underline="Underline.None">Cautch</MudLink>
+                        </Authorized>
+                        <NotAuthorized>
+                            <MudLink Href="/" Typo="Typo.h5" Color="Color.Inherit" Underline="Underline.None">Cautch</MudLink>
+                        </NotAuthorized>
+                    </AuthorizeView>
+                </MudHidden>
+                
+                <MudHidden Breakpoint="Breakpoint.MdAndUp">
+                    <AuthorizeView Roles="Admin" Context="adminMobileTextContext">
+                        <Authorized>
+                            <MudLink Href="/" Typo="Typo.h5" Color="Color.Inherit" Underline="Underline.None">Cautch</MudLink>
+                        </Authorized>
+                        <NotAuthorized>
+                            <MudLink Href="/" Typo="Typo.h5" Color="Color.Inherit" Underline="Underline.None">Cautch</MudLink>
+                        </NotAuthorized>
+                    </AuthorizeView>
+                </MudHidden>
+                
+                <MudSpacer />
+                
+                <MudHidden Breakpoint="Breakpoint.SmAndDown">
+                    <MudIconButton Icon="@ThemeService.DarkLightModeButtonIcon" 
+                                  Color="Color.Inherit" 
+                                  Class="mr-3"
+                                  OnClick="ToggleTheme" />
+                    
+                    <MudButton Color="Color.Error" 
+                              Variant="Variant.Filled" 
+                              StartIcon="@Icons.Material.Filled.Logout" 
+                              Class="mr-3"
+                              OnClick="HandleLogout">
+                        Logout
+                    </MudButton>
+                </MudHidden>
+                
+                <MudHidden Breakpoint="Breakpoint.MdAndUp">
+                    <MudIconButton Icon="@Icons.Material.Filled.ArrowDropDown" 
+                                  Color="Color.Inherit" 
+                                  Edge="Edge.End"
+                                  OnClick="@((e) => RightDrawerToggle())" />
+                </MudHidden>
+            </MudAppBar>
+            
+            <AuthorizeView Roles="Admin" Context="adminDrawerContext">
+                <Authorized>
+                    <MudDrawer id="nav-drawer" @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="2" Style="margin-top: 0;">
+                        <NavMenu />
+                    </MudDrawer>
+                </Authorized>
+            </AuthorizeView>
+            
+            <MudDrawer @bind-Open="_rightDrawerOpen" 
+                      Anchor="Anchor.Right" 
+                      Elevation="2" 
+                      Variant="DrawerVariant.Temporary">
+                <MudDrawerHeader>
+                    <MudText Typo="Typo.h6">Menu</MudText>
+                </MudDrawerHeader>
+                <MudNavMenu>
+                    <MudNavLink Icon="@ThemeService.DarkLightModeButtonIcon" 
+                               OnClick="ToggleTheme">
+                        @(ThemeService.IsDarkMode ? "Dark Mode" : "Light Mode")
+                    </MudNavLink>
+                    <MudDivider Class="my-2" />
+                    <MudNavLink Icon="@Icons.Material.Filled.Logout" 
+                               IconColor="Color.Error"
+                               OnClick="HandleLogoutAndCloseDrawer">
+                        Logout
+                    </MudNavLink>
+                </MudNavMenu>
+            </MudDrawer>
+        </Authorized>
+        <NotAuthorized>
+            <MudAppBar Elevation="1" Fixed="false" Style="position: absolute; top: 0; left: 0; right: 0; z-index: 1100;">
+                <MudHidden Breakpoint="Breakpoint.SmAndDown">
+                    <MudLink Href="/" Typo="Typo.h5" Color="Color.Inherit" Underline="Underline.None">Cautch</MudLink>
+                </MudHidden>
+                
+                <MudHidden Breakpoint="Breakpoint.MdAndUp">
+                    <MudLink Href="/" Typo="Typo.h5" Color="Color.Inherit" Underline="Underline.None">Cautch</MudLink>
+                </MudHidden>
+                
+                <MudSpacer />
+                
+                <MudHidden Breakpoint="Breakpoint.SmAndDown">
+                    <MudIconButton Icon="@ThemeService.DarkLightModeButtonIcon" 
+                                  Color="Color.Inherit" 
+                                  Class="mr-3"
+                                  OnClick="ToggleTheme" />
+
+                    <MudButton Color="Color.Primary" 
+                              Variant="Variant.Filled" 
+                              StartIcon="@Icons.Material.Filled.Login" 
+                              Class="mr-3"
+                              Href="/login">
+                        Login
+                    </MudButton>
+                    
+                    <MudButton Color="Color.Primary" 
+                              Variant="Variant.Filled" 
+                              StartIcon="@Icons.Material.Filled.PersonAdd" 
+                              Class="mr-3"
+                              Href="/register">
+                        Register
+                    </MudButton>
+                </MudHidden>
+                
+                <MudHidden Breakpoint="Breakpoint.MdAndUp">
+                    <MudIconButton Icon="@Icons.Material.Filled.ArrowDropDown" 
+                                  Color="Color.Inherit" 
+                                  Edge="Edge.End"
+                                  OnClick="@((e) => RightDrawerToggle())" />
+                </MudHidden>
+            </MudAppBar>
+            
+            <MudDrawer @bind-Open="_rightDrawerOpen" 
+                      Anchor="Anchor.Right" 
+                      Elevation="2" 
+                      Variant="DrawerVariant.Temporary">
+                <MudDrawerHeader>
+                    <MudText Typo="Typo.h6">Menu</MudText>
+                </MudDrawerHeader>
+                <MudNavMenu>
+                    <MudNavLink Icon="@Icons.Material.Filled.Login" 
+                               IconColor="Color.Primary"
+                               Href="/login">
+                        Login
+                    </MudNavLink>
+                    <MudNavLink Icon="@Icons.Material.Filled.PersonAdd" 
+                               IconColor="Color.Primary"
+                               Href="/register">
+                        Register
+                    </MudNavLink>
+                    <MudDivider Class="my-2" />
+                    <MudNavLink Icon="@ThemeService.DarkLightModeButtonIcon" 
+                               OnClick="ToggleTheme">
+                        @(ThemeService.IsDarkMode ? "Dark Mode" : "Light Mode")
+                    </MudNavLink>
+                </MudNavMenu>
+            </MudDrawer>
+        </NotAuthorized>
+    </AuthorizeView>
+    
+    <MudMainContent Class="pt-0">
+        @Body
+    </MudMainContent>
+</MudLayout>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">ðŸ—™</span>
+</div>
+
+@code {
+    private bool _drawerOpen = true;
+    private bool _rightDrawerOpen = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ThemeService.InitializeAsync(JS);
+            ThemeService.OnThemeChanged += OnThemeChanged;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ToggleTheme()
+    {
+        await ThemeService.ToggleDarkModeAsync(JS);
+    }
+
+    private void OnThemeChanged()
+    {
+        StateHasChanged();
+    }
+
+    private void DrawerToggle()
+    {
+        _drawerOpen = !_drawerOpen;
+    }
+    
+    private void RightDrawerToggle()
+    {
+        _rightDrawerOpen = !_rightDrawerOpen;
+    }
+
+    private void HandleLogout()
+    {
+        Navigation.NavigateTo("/api/account/logout", forceLoad: true);
+    }
+    
+    private void HandleLogoutAndCloseDrawer()
+    {
+        _rightDrawerOpen = false;
+        Navigation.NavigateTo("/api/account/logout", forceLoad: true);
+    }
+
+    public void Dispose()
+    {
+        ThemeService.OnThemeChanged -= OnThemeChanged;
+    }
+}

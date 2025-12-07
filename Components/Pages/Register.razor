@@ -1,0 +1,336 @@
+@page "/register"
+@inject mudblazor_cinema.Data.AppDbContext DbContext
+@inject NavigationManager Navigation
+@using Microsoft.EntityFrameworkCore
+@using mudblazor_cinema.Models
+@using BCrypt.Net
+
+<MudContainer Class="d-flex align-center justify-center" Style="height: 100vh;">
+<MudGrid Justify="Justify.Center" Style="max-width: 500px; width: 100%;">
+    <MudItem xs="12" sm="12">
+        <MudCard Class="pa-4 py-16 pa-sm-16">
+            <MudCardContent Class="pa-0">
+                <MudText Typo="Typo.h4">Request Account</MudText>
+                <MudTextField Label="Username"
+                              Class="pt-4"
+                              Variant="Variant.Outlined"
+                              @bind-Value="model.Username"
+                              @bind-Value:after="@(() => ClearUsernameError())"
+                              Error="@(!string.IsNullOrEmpty(usernameError))"
+                              ErrorText="@usernameError"
+                              Immediate="true"/>
+                <MudTextField Label="Email" 
+                              Class="pt-1"
+                              Variant="Variant.Outlined"
+                              @bind-Value="model.Email"
+                              @bind-Value:after="@(() => ClearEmailError())"
+                              Error="@(!string.IsNullOrEmpty(emailError))"
+                              ErrorText="@emailError"
+                              InputType="InputType.Email"
+                              Immediate="true"/>
+                <MudTextField Label="Password" 
+                              Class="pt-1"
+                              Variant="Variant.Outlined"
+                              @bind-Value="model.Password"
+                              @bind-Value:after="@(() => ClearPasswordError())"
+                              Error="@(!string.IsNullOrEmpty(passwordError))"
+                              ErrorText="@passwordError"
+                              InputType="InputType.Password"
+                              Immediate="true"/>
+                <MudTextField Label="Confirm Password" 
+                              Class="pt-1"
+                              Variant="Variant.Outlined"
+                              @bind-Value="model.ConfirmPassword"
+                              @bind-Value:after="@(() => ClearConfirmPasswordError())"
+                              Error="@(!string.IsNullOrEmpty(confirmPasswordError))"
+                              ErrorText="@confirmPasswordError"
+                              InputType="InputType.Password"
+                              Immediate="true"/>
+            </MudCardContent>
+            <MudCardActions Class="pa-0 pt-8">
+                <MudButton Variant="Variant.Filled"
+                        Color="Color.Primary"
+                        FullWidth="true"
+                        Size="Size.Large"
+                        OnClick="HandleRegister"
+                        Disabled="@isProcessing">
+                    @if (isProcessing)
+                    {
+                        <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true"/>
+                        <MudText Class="ms-2">PROCESSING...</MudText>
+                    }
+                    else
+                    {
+                        @("REGISTER")
+                    }
+                </MudButton>
+            </MudCardActions>
+            <MudText Class="pt-16" Typo="Typo.body1">
+                Already have an account? 
+                <MudLink Href="/login" Typo="Typo.body1">Login&nbsp;here</MudLink>
+            </MudText>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" sm="12">
+        @if (success)
+        {
+            <MudAlert Severity="Severity.Success" Class="mt-4">
+                Account request submitted successfully! An administrator will review your request.
+            </MudAlert>
+        }
+        @if (!string.IsNullOrEmpty(generalError))
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-4">
+                @generalError
+            </MudAlert>
+        }
+    </MudItem>
+</MudGrid>
+</MudContainer>
+
+@code {
+    private RegisterAccountForm model = new RegisterAccountForm();
+    private bool success = false;
+    private bool isProcessing = false;
+    private string usernameError = "";
+    private string emailError = "";
+    private string passwordError = "";
+    private string confirmPasswordError = "";
+    private string generalError = "";
+
+    public class RegisterAccountForm
+    {
+        public string Username { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string Password { get; set; } = "";
+        public string ConfirmPassword { get; set; } = "";
+    }
+
+    // Clear error methods - called when user starts typing
+    private void ClearUsernameError()
+    {
+        if (!string.IsNullOrEmpty(usernameError))
+        {
+            usernameError = "";
+        }
+    }
+
+    private void ClearEmailError()
+    {
+        if (!string.IsNullOrEmpty(emailError))
+        {
+            emailError = "";
+        }
+    }
+
+    private void ClearPasswordError()
+    {
+        if (!string.IsNullOrEmpty(passwordError))
+        {
+            passwordError = "";
+        }
+        
+        // Also clear confirm password error if passwords now match
+        if (!string.IsNullOrEmpty(confirmPasswordError) && 
+            !string.IsNullOrWhiteSpace(model.Password) &&
+            model.Password == model.ConfirmPassword)
+        {
+            confirmPasswordError = "";
+        }
+    }
+
+    private void ClearConfirmPasswordError()
+    {
+        if (!string.IsNullOrEmpty(confirmPasswordError))
+        {
+            confirmPasswordError = "";
+        }
+    }
+
+    private async Task HandleRegister()
+    {
+        // Reset all states
+        success = false;
+        usernameError = "";
+        emailError = "";
+        passwordError = "";
+        confirmPasswordError = "";
+        generalError = "";
+        
+        // Validation
+        bool hasErrors = false;
+        
+        if (string.IsNullOrWhiteSpace(model.Username))
+        {
+            usernameError = "Username is required";
+            hasErrors = true;
+        }
+        else if (model.Username.Length > 24)
+        {
+            usernameError = "Username must be 24 characters or less";
+            hasErrors = true;
+        }
+        
+        if (string.IsNullOrWhiteSpace(model.Email))
+        {
+            emailError = "Email is required";
+            hasErrors = true;
+        }
+        else if (!IsValidEmail(model.Email))
+        {
+            emailError = "Please enter a valid email address";
+            hasErrors = true;
+        }
+        else if (model.Email.Length > 255)
+        {
+            emailError = "Email must be 255 characters or less";
+            hasErrors = true;
+        }
+        
+        if (string.IsNullOrWhiteSpace(model.Password))
+        {
+            passwordError = "Password is required";
+            hasErrors = true;
+        }
+        else if (model.Password.Length < 6)
+        {
+            passwordError = "Password must be at least 6 characters";
+            hasErrors = true;
+        }
+        else if (model.Password.Length > 255)
+        {
+            passwordError = "Password must be 255 characters or less";
+            hasErrors = true;
+        }
+        
+        if (string.IsNullOrWhiteSpace(model.ConfirmPassword))
+        {
+            confirmPasswordError = "Please confirm your password";
+            hasErrors = true;
+        }
+        else if (model.Password != model.ConfirmPassword)
+        {
+            confirmPasswordError = "Passwords do not match";
+            hasErrors = true;
+        }
+        
+        if (hasErrors)
+        {
+            return;
+        }
+
+        isProcessing = true;
+
+        try
+        {
+            bool hasDatabaseErrors = false;
+            
+            // Check if username already exists in Users table
+            var existingUser = await DbContext.Users
+                .FirstOrDefaultAsync(u => u.Uid == model.Username);
+            
+            if (existingUser != null)
+            {
+                usernameError = "Username already registered";
+                hasDatabaseErrors = true;
+            }
+
+            // Check if email already exists in Users table
+            var existingEmail = await DbContext.Users
+                .FirstOrDefaultAsync(u => u.Email == model.Email);
+
+            if (existingEmail != null)
+            {
+                emailError = "Email already registered";
+                hasDatabaseErrors = true;
+            }
+
+            // Check if username already exists in requested_user table
+            var existingUserRequest = await DbContext.Requested_Users
+                .FirstOrDefaultAsync(r => r.Uid == model.Username);
+            
+            if (existingUserRequest != null)
+            {
+                usernameError = "Username already requested";
+                hasDatabaseErrors = true;
+            }
+
+            // Check if email already exists in requested_user table
+            var existingEmailRequest = await DbContext.Requested_Users
+                .FirstOrDefaultAsync(r => r.Email == model.Email);
+            
+            if (existingEmailRequest != null)
+            {
+                emailError = "Email already requested";
+                hasDatabaseErrors = true;
+            }
+            
+            // If any database validation errors occurred, stop here
+            if (hasDatabaseErrors)
+            {
+                isProcessing = false;
+                return;
+            }
+
+            string hashedPassword = BCrypt.HashPassword(model.Password);
+
+            // Create new requested user with hashed password
+            var requestedUser = new Requested_User
+            {
+                Uid = model.Username,
+                Email = model.Email,
+                Password = hashedPassword // Now storing the hashed password
+            };
+
+            DbContext.Requested_Users.Add(requestedUser);
+            await DbContext.SaveChangesAsync();
+
+            success = true;
+            
+            // Clear form
+            model = new RegisterAccountForm();
+        }
+        catch (DbUpdateException dbEx)
+        {
+            // Handle database-specific errors
+            if (dbEx.InnerException?.Message.Contains("duplicate key") == true)
+            {
+                if (dbEx.InnerException.Message.Contains("email"))
+                {
+                    emailError = "This email is already registered";
+                }
+                else
+                {
+                    usernameError = "This username is already taken";
+                }
+            }
+            else
+            {
+                generalError = "An error occurred while processing your request. Please try again.";
+                Console.WriteLine($"Database error: {dbEx.Message}");
+            }
+        }
+        catch (Exception ex)
+        {
+            generalError = "An unexpected error occurred. Please try again.";
+            Console.WriteLine($"Registration error: {ex.Message}");
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private bool IsValidEmail(string email)
+    {
+        try
+        {
+            var addr = new System.Net.Mail.MailAddress(email);
+            return addr.Address == email;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+}

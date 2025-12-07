@@ -1,0 +1,777 @@
+@page "/browse"
+@layout mudblazor_cinema.Components.Layout.BrowseLayout
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using mudblazor_cinema.Models
+@using mudblazor_cinema.Services
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.JSInterop
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+@inject mudblazor_cinema.Data.AppDbContext DbContext
+@inject ThemeService ThemeService
+@inject IJSRuntime JS
+
+@implements IAsyncDisposable
+
+<PageTitle>Browse</PageTitle>
+
+<script>
+    window.initScrollHandler = (dotnetRef) => {
+        let lastScroll = 0;
+        const onScroll = () => {
+            const currentScroll = window.pageYOffset;
+            dotnetRef.invokeMethodAsync('SetNavbarVisibility', currentScroll < lastScroll || currentScroll < 120);
+            lastScroll = currentScroll;
+        };
+        window.addEventListener('scroll', onScroll);
+        return { dispose: () => window.removeEventListener('scroll', onScroll) };
+    };
+</script>
+
+<style>
+    .mud-appbar {
+        min-height: 64px !important;
+        height: 64px !important;
+        background: var(--mud-palette-surface) !important;
+        backdrop-filter: none !important;
+        opacity: 1;
+        filter: blur(0px);
+        transform: translateY(0) scale(1);
+        transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out, filter 0.3s ease-in-out !important;
+    }
+
+    .mud-appbar.hidden {
+        transform: translateY(-100%) scale(0.95);
+        opacity: 0;
+        filter: blur(8px);
+    }
+
+    .mud-appbar .mud-toolbar-gutters {
+        padding-left: 24px !important;
+        padding-right: 24px !important;
+    }
+
+    .mud-appbar .mud-toolbar {
+        min-height: 64px !important;
+    }
+
+    .mud-appbar {
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+    }
+
+    @@media (max-width: 959px) {
+        .mud-appbar {
+            box-shadow: none !important;
+        }
+    }
+
+    .mobile-filter-bar {
+        position: fixed;
+        top: 64px;
+        left: 0;
+        right: 0;
+        z-index: 1099;
+        background: var(--mud-palette-surface) !important;
+        backdrop-filter: none !important;
+        padding: 8px 16px;
+        display: flex;
+        gap: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        opacity: 1;
+        filter: blur(0px);
+        transform: translateY(0) scale(1);
+        transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out, filter 0.3s ease-in-out;
+    }
+
+    .mobile-filter-bar.hidden {
+        transform: translateY(calc(-100% - 64px)) scale(0.95);
+        opacity: 0;
+        filter: blur(8px);
+    }
+
+    .content-container {
+        padding-top: 24px;
+        padding-bottom: 24px;
+        padding-left: 24px;
+        padding-right: 24px;
+        box-sizing: border-box;
+        min-height: calc(100vh - 64px);
+    }
+
+    @@media (max-width: 959px) {
+        .content-container {
+            padding-top: 92px;
+            min-height: calc(100vh - 64px);
+        }
+    }
+
+    .menu-paper {
+        width: 48px;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        border-radius: 4px;
+        padding: 0;
+        overflow: hidden;
+        flex-shrink: 0;
+    }
+
+    .profile-image {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .search-container {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        flex: 1;
+        max-width: 450px;
+    }
+
+    .search-container .mud-input-root {
+        min-width: 100px;
+    }
+
+    @@media (max-width: 959px) and (orientation: landscape) {
+        .mud-popover {
+            max-height: min(300px, calc(100vh - 180px)) !important;
+            min-height: 150px !important;
+        }
+    }
+
+    @@media (max-width: 959px) and (orientation: portrait) {
+        .mud-popover {
+            max-height: min(400px, calc(100vh - 160px)) !important;
+            min-height: 200px !important;
+        }
+    }
+    .movie-progress-bar {
+        background-color: rgba(255, 255, 255, 0.2) !important;
+    }
+
+    .movie-progress-bar .mud-progress-linear-bar {
+        background-color: #e50914 !important;
+    }
+
+    .movie-progress-bar.mud-progress-linear .mud-progress-linear-bars {
+        background-color: rgba(255, 255, 255, 0.2) !important;
+    }
+
+    .mud-card img {
+        transition: transform 0.3s ease-in-out;
+        transform-origin: center;
+        display: block;
+        width: 100%;
+    }
+
+    .mud-card img:hover {
+        transform: scale(1.1);
+    }
+
+</style>
+<MudAppBar Elevation="0" Style="position: fixed; top: 0; left: 0; right: 0; z-index: 1100;" Class="@(_isNavbarVisible ? "" : "hidden")">
+    <AuthorizeView Roles="Admin" Context="adminContext">
+        <Authorized>
+            <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="DrawerToggle" />
+        </Authorized>
+    </AuthorizeView>
+    
+    <MudHidden Breakpoint="Breakpoint.SmAndDown">
+        <MudStack Row="true" AlignItems="AlignItems.Center">
+            <MudLink Href="/browse" Typo="Typo.h5" Color="Color.Inherit" Underline="Underline.None">Cautch</MudLink>
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-grow-1">
+                <MudSelect T="string" 
+                        @bind-Value="selectedSort" 
+                        Label="Sort by" 
+                        Variant="Variant.Outlined"
+                        Margin="Margin.Dense"
+                        Style="width: 200px;"
+                        MaxHeight="336"
+                        @bind-Value:after="() => SortAndFilterMovies()">
+                    <MudSelectItem T="string" Value="@("my_list")">My List</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("recently_watched")">Recently Watched</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("alpha_az")">Alphabetical (A-Z)</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("added_latest")">Upload Date (New)</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("year_latest")">Release Date (New)</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("length_longest")">Length (Long)</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("best_rated")">Rating (Best)</MudSelectItem>
+                </MudSelect>
+                <MudSelect T="int?" 
+                        @bind-Value="selectedGenreId" 
+                        Label="Genre"
+                        Variant="Variant.Outlined"
+                        Margin="Margin.Dense"
+                        Style="width: 200px;"
+                        MaxHeight="336"
+                        @bind-Value:after="() => SortAndFilterMovies()">
+                    <MudSelectItem T="int?" Value="0">All Genres</MudSelectItem>
+                    @foreach (var genre in genres)
+                    {
+                        <MudSelectItem T="int?" Value="genre.Id">@genre.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudStack>
+        </MudStack>
+        <MudSpacer />
+        <div class="search-container">
+            <MudTextField @bind-Value="searchTerm"
+                          Label="Search" 
+                          Variant="Variant.Outlined"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true"
+                          Margin="Margin.Dense"
+                          Style="width: 100%;"
+                          @onkeyup="@(async () => await SortAndFilterMovies())" />
+            <MudPaper Class="menu-paper" Elevation="0" @onclick="RightDrawerToggle">
+                @if (string.IsNullOrEmpty(currentAvatarUrl))
+                {
+                    <MudProgressCircular Color="Color.Primary" Size="Size.Small" Indeterminate="true" />
+                }
+                else
+                {
+                    <img src="@currentAvatarUrl" alt="Profile" class="profile-image" />
+                }
+            </MudPaper>
+        </div>
+    </MudHidden>
+    
+    <MudHidden Breakpoint="Breakpoint.MdAndUp">
+        <MudLink Href="/browse" Typo="Typo.h6" Color="Color.Inherit" Underline="Underline.None" Class="pr-2">Cautch</MudLink>
+        <div class="search-container" style="max-width: none;">
+            <MudTextField @bind-Value="searchTerm"
+                        Label="Search"
+                        Variant="Variant.Outlined"
+                        Adornment="Adornment.Start"
+                        AdornmentIcon="@Icons.Material.Filled.Search"
+                        Immediate="true"
+                        Margin="Margin.Dense"
+                        Style="width: 100%;"
+                        @onkeyup="@(async () => await SortAndFilterMovies())" />
+            <MudPaper Class="menu-paper" Elevation="0" @onclick="RightDrawerToggle">
+                @if (string.IsNullOrEmpty(currentAvatarUrl))
+                {
+                    <MudProgressCircular Color="Color.Primary" Size="Size.Small" Indeterminate="true" />
+                }
+                else
+                {
+                    <img src="@currentAvatarUrl" alt="Profile" class="profile-image" />
+                }
+            </MudPaper>
+        </div>
+    </MudHidden>
+</MudAppBar>
+
+<MudHidden Breakpoint="Breakpoint.MdAndUp">
+    <div class="mobile-filter-bar @(_isNavbarVisible ? "" : "hidden")">
+        <MudSelect T="string" 
+                   @bind-Value="selectedSort" 
+                   Label="Sort by" 
+                   Variant="Variant.Outlined"
+                   Margin="Margin.Dense"
+                   Style="flex: 1;"
+                   MaxHeight="336"
+                   @bind-Value:after="() => SortAndFilterMovies()">
+            <MudSelectItem T="string" Value="@("my_list")">My List</MudSelectItem>
+            <MudSelectItem T="string" Value="@("recently_watched")">Recently Watched</MudSelectItem>
+            <MudSelectItem T="string" Value="@("alpha_az")">Alphabetical (A-Z)</MudSelectItem>
+            <MudSelectItem T="string" Value="@("added_latest")">Upload Date (New)</MudSelectItem>
+            <MudSelectItem T="string" Value="@("year_latest")">Release Date (New)</MudSelectItem>
+            <MudSelectItem T="string" Value="@("length_longest")">Length (Long)</MudSelectItem>
+            <MudSelectItem T="string" Value="@("best_rated")">Rating (Best)</MudSelectItem>
+        </MudSelect>
+        <MudSelect T="int?" 
+                   @bind-Value="selectedGenreId" 
+                   Label="Genre"
+                   Variant="Variant.Outlined"
+                   Margin="Margin.Dense"
+                   Style="flex: 1;"
+                   MaxHeight="336"
+                   @bind-Value:after="() => SortAndFilterMovies()">
+            <MudSelectItem T="int?" Value="0">All Genres</MudSelectItem>
+            @foreach (var genre in genres)
+            {
+                <MudSelectItem T="int?" Value="genre.Id">@genre.Name</MudSelectItem>
+            }
+        </MudSelect>
+    </div>
+</MudHidden>
+
+<MudDrawer @bind-Open="_rightDrawerOpen" 
+          Anchor="Anchor.Right" 
+          Elevation="2" 
+          Variant="DrawerVariant.Temporary">
+    <MudDrawerHeader Style="display: flex; flex-direction: column; width: 100%; min-height: 100px;">
+        <MudText Typo="Typo.h6" Style="margin-bottom: 8px;">@currentUsername's Profile</MudText>
+        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; margin-bottom: 4px;">
+            <MudText Typo="Typo.body1" Style="font-weight: 500;">Level @((userWatchTimeTotal / 100))</MudText>
+            <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-secondary);">@((userWatchTimeTotal % 100))/100 XP</MudText>
+        </div>
+        <div style="width: 100%;">
+            <MudProgressLinear Value="@((userWatchTimeTotal % 100))" 
+                               Min="0" 
+                               Max="100" 
+                               Color="Color.Primary" 
+                               Size="Size.Medium" />
+        </div>
+    </MudDrawerHeader>
+    <MudNavMenu>
+        <MudDivider Class="my-2" />
+        <MudNavLink Icon="@Icons.Material.Filled.Person" 
+                   OnClick="NavigateToProfile">
+            Profile
+        </MudNavLink>
+        <MudNavLink Icon="@Icons.Material.Filled.CheckCircle" 
+                   OnClick="NavigateToMyList">
+            My List
+        </MudNavLink>
+        <MudNavLink Icon="@Icons.Material.Filled.WatchLater" 
+                   OnClick="NavigateToRecentlyWatched">
+            Recently Watched
+        </MudNavLink>
+        <MudDivider Class="my-2" />
+        <MudNavLink Icon="@ThemeService.DarkLightModeButtonIcon" 
+                   OnClick="ToggleTheme">
+            @(ThemeService.IsDarkMode ? "Dark Mode" : "Light Mode")
+        </MudNavLink>
+        <MudDivider Class="my-2" />
+        <MudNavLink Icon="@Icons.Material.Filled.Logout" 
+                   IconColor="Color.Error"
+                   OnClick="HandleLogoutAndCloseDrawer">
+            Logout
+        </MudNavLink>
+    </MudNavMenu>
+</MudDrawer>
+
+<MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="content-container" Style="@(isLoading ? "min-height: calc(100vh - 64px); display: flex; align-items: center; justify-content: center;" : "")">
+    @if (isLoading)
+    {
+        <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+    }
+    else
+    {
+        @if (filteredMovies == null || !filteredMovies.Any())
+        {
+            <MudAlert Severity="Severity.Info">No results found.</MudAlert>
+        }
+        else
+        {
+            <MudGrid>
+                @foreach (var movie in filteredMovies)
+                {
+                    <MudItem xs="12" sm="6" md="4" lg="3" @key="movie.Id">
+                        <MudCard Style="height: 100%; display: flex; flex-direction: column;">
+                            <div style="display: flex; height: 100%;">
+                                <div style="position: relative; width: 40%; min-width: 40%; overflow: hidden;">
+                                    <MudImage Src="@FormatImagePath(movie.ImageUrl)" 
+                                            Alt="@movie.Name" 
+                                            ObjectFit="ObjectFit.Cover"
+                                            Style="width: 100%; height: 100%; cursor: pointer; object-position: center;"
+                                            @onclick="() => NavigateToWatch(movie.Id)" />
+                                    @if (movieWatchProgress.ContainsKey(movie.Id))
+                                    {
+                                        var progress = movieWatchProgress[movie.Id];
+                                        var progressPercent = progress.movieTimeMax.TotalSeconds > 0 
+                                            ? (progress.movieTime.TotalSeconds / progress.movieTimeMax.TotalSeconds) * 100 
+                                            : 0;
+                                        <div style="position: absolute; bottom: 0; left: 0; right: 0;">
+                                            <MudProgressLinear Color="Color.Error" Value="@progressPercent" Size="Size.Small" Style="height: 4px;" Class="movie-progress-bar" />
+                                        </div>
+                                    }
+                                </div>
+                                
+                                <MudCardContent Class="d-flex flex-column justify-between pa-3" Style="flex: 1; min-width: 0;">
+                                    <div class="d-flex flex-column" style="overflow: hidden;">
+                                        <MudText Typo="Typo.h6" Class="mb-2" Style="overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
+                                            @movie.Name
+                                        </MudText>
+                                        @if (movie.Year.HasValue)
+                                        {
+                                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-1">
+                                                Year: @movie.Year
+                                            </MudText>
+                                        }
+                                        @if (movie.Runtime.HasValue)
+                                        {
+                                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-1">
+                                                Length: @movie.Runtime min
+                                            </MudText>
+                                        }
+                                        @if (movie.VoteAverage.HasValue)
+                                        {
+                                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mb-1">
+                                                <MudIcon Icon="@Icons.Material.Filled.Star" Color="Color.Warning" Size="Size.Small" />
+                                                <MudText Typo="Typo.body2" Color="Color.Warning">
+                                                    @movie.VoteAverage.Value.ToString("0.0")/10
+                                                </MudText>
+                                            </MudStack>
+                                        }
+                                    </div>
+
+                                    @if (movie.MovieGenres?.Any() == true)
+                                    {
+                                        <div class="mt-auto mb-2">
+                                            <MudStack Row="true" Spacing="1" Style="flex-wrap: wrap;">
+                                                @foreach (var movieGenre in movie.MovieGenres)
+                                                {
+                                                    <MudChip T="string"
+                                                            Size="Size.Small" 
+                                                            Color="@(selectedGenreId == movieGenre.GenreMovie.Id ? Color.Info : Color.Info)" 
+                                                            Variant="@(selectedGenreId == movieGenre.GenreMovie.Id ? Variant.Filled : Variant.Text)"
+                                                            OnClick="() => SelectGenre(movieGenre.GenreMovie.Id)"
+                                                            Style="cursor: pointer; margin: 2px;">
+                                                        @movieGenre.GenreMovie.Name
+                                                    </MudChip>
+                                                }
+                                            </MudStack>
+                                        </div>
+                                    }
+
+                                    @if (addedMovieIds.Contains(movie.Id))
+                                    {
+                                        <MudIconButton Icon="@Icons.Material.Filled.Check" 
+                                                        Variant="Variant.Filled" 
+                                                        Color="Color.Success" 
+                                                        Size="Size.Medium" 
+                                                        Style="border-radius: 50%; align-self: flex-start;"
+                                                        OnClick="@(() => RemoveMovieFromUser(movie.Id))" />
+                                    }
+                                    else
+                                    {
+                                        <MudIconButton Icon="@Icons.Material.Filled.Add" 
+                                                        Variant="Variant.Filled" 
+                                                        Color="Color.Success" 
+                                                        Size="Size.Medium" 
+                                                        Style="border-radius: 50%; align-self: flex-start;"
+                                                        OnClick="@(() => AddMovieToUser(movie.Id))" />
+                                    }
+                                </MudCardContent>
+                            </div>
+                        </MudCard>
+                    </MudItem>
+                }
+            </MudGrid>
+        }
+    }
+</MudContainer>
+
+@code {
+    private List<Movie>? movies;
+    private List<Movie>? filteredMovies;
+    private List<Genre_Movie> genres = new List<Genre_Movie>();
+    private bool isLoading = true;
+    private string searchTerm = string.Empty;
+    private int? selectedGenreId = 0;
+    private string selectedSort = "alpha_az";
+    private string currentUsername = string.Empty;
+    private HashSet<int> addedMovieIds = new HashSet<int>();
+    private Dictionary<int, DateTime> movieAddedDates = new Dictionary<int, DateTime>();
+    private Dictionary<int, DateTime> movieWatchDates = new Dictionary<int, DateTime>();
+    private Dictionary<int, (TimeSpan movieTime, TimeSpan movieTimeMax)> movieWatchProgress = new Dictionary<int, (TimeSpan, TimeSpan)>();
+    private bool _rightDrawerOpen = false;
+    private bool _isNavbarVisible = true;
+    private IJSObjectReference? _scrollHandler;
+    private string currentAvatarUrl = string.Empty;
+    private int userWatchTimeTotal = 0;
+
+    [CascadingParameter]
+    public mudblazor_cinema.Components.Layout.BrowseLayout? Layout { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        currentUsername = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+
+        try
+        {
+            movies = await DbContext.Movies
+                .Include(m => m.MovieGenres)
+                    .ThenInclude(mg => mg.GenreMovie)
+                .ToListAsync();
+            
+            genres = await DbContext.Set<Genre_Movie>()
+                .Where(g => g.MovieGenres.Any())
+                .OrderBy(g => g.Name)
+                .ToListAsync();
+
+            var userMovies = await DbContext.MovieUserRels
+                .Where(mu => mu.UserFk == currentUsername)
+                .ToListAsync();
+            
+            addedMovieIds = new HashSet<int>(userMovies.Select(mu => mu.MovieFk));
+            movieAddedDates = userMovies
+                .Where(mu => mu.AddedDate.HasValue)
+                .ToDictionary(mu => mu.MovieFk, mu => mu.AddedDate!.Value);
+            
+            var watchedMovies = await DbContext.Set<MovieUserWatching_Rel>()
+                .Where(mw => mw.UserFk == currentUsername)
+                .ToListAsync();
+            
+            movieWatchDates = watchedMovies
+                .Where(mw => mw.UpdatedDate.HasValue)
+                .ToDictionary(mw => mw.MovieFk, mw => mw.UpdatedDate!.Value);
+            
+            movieWatchProgress = watchedMovies
+                .ToDictionary(mw => mw.MovieFk, mw => (mw.MovieTime, mw.MovieTimeMax));
+            
+            var user = await DbContext.Users
+                .Include(u => u.CurrentAvatar)
+                .FirstOrDefaultAsync(u => u.Uid == currentUsername);
+            
+            if (user != null)
+            {
+                userWatchTimeTotal = user.WatchTimeTotal;
+                
+                if (user.CurrentAvatar != null)
+                {
+                    currentAvatarUrl = FormatAvatarPath(user.CurrentAvatar.ImageUrl);
+                }
+            }
+            
+            await SortAndFilterMovies();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Fehler beim Laden der Filme: {ex.Message}");
+            movies = new List<Movie>();
+            filteredMovies = new List<Movie>();
+            genres = new List<Genre_Movie>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            _scrollHandler = await JS.InvokeAsync<IJSObjectReference>("initScrollHandler", DotNetObjectReference.Create(this));
+    }
+
+    [JSInvokable]
+    public void SetNavbarVisibility(bool visible)
+    {
+        _isNavbarVisible = visible;
+        StateHasChanged();
+    }
+
+    private async Task ToggleTheme()
+    {
+        await ThemeService.ToggleDarkModeAsync(JS);
+    }
+
+    private async Task AddMovieToUser(int movieId)
+    {
+        if (addedMovieIds.Contains(movieId)) return;
+        
+        try
+        {
+            var addedDate = DateTime.Now;
+            var movieUserRel = new MovieUser_Rel
+            {
+                MovieFk = movieId,
+                UserFk = currentUsername,
+                AddedDate = addedDate
+            };
+
+            DbContext.MovieUserRels.Add(movieUserRel);
+            await DbContext.SaveChangesAsync();
+            addedMovieIds.Add(movieId);
+            movieAddedDates[movieId] = addedDate;
+            
+            if (selectedSort == "my_list")
+            {
+                await SortAndFilterMovies();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error adding movie: {ex.Message}");
+        }
+    }
+
+    private async Task RemoveMovieFromUser(int movieId)
+    {
+        try
+        {
+            var movieUserRel = await DbContext.MovieUserRels
+                .FirstOrDefaultAsync(mu => mu.MovieFk == movieId && mu.UserFk == currentUsername);
+
+            if (movieUserRel != null)
+            {
+                DbContext.MovieUserRels.Remove(movieUserRel);
+                await DbContext.SaveChangesAsync();
+                addedMovieIds.Remove(movieId);
+                movieAddedDates.Remove(movieId);
+                
+                if (selectedSort == "my_list")
+                {
+                    await SortAndFilterMovies(scrollToTop: false);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error removing movie: {ex.Message}");
+        }
+    }
+
+    private void NavigateToWatch(int movieId)
+    {
+        Navigation.NavigateTo($"/watch/{movieId}");
+    }
+
+    private async Task SelectGenre(int genreId)
+    {
+        if (selectedGenreId == genreId)
+        {
+            selectedGenreId = 0;
+        }
+        else
+        {
+            selectedGenreId = genreId;
+        }
+        await SortAndFilterMovies();
+    }
+
+    private async Task SortAndFilterMovies(bool scrollToTop = true)
+    {
+        if (movies == null)
+        {
+            filteredMovies = new List<Movie>();
+            return;
+        }
+
+        var filtered = movies.AsEnumerable();
+
+        if (selectedSort == "my_list")
+        {
+            filtered = filtered.Where(m => addedMovieIds.Contains(m.Id));
+        }
+
+
+        if (selectedSort == "recently_watched")
+        {
+            filtered = filtered.Where(m => movieWatchDates.ContainsKey(m.Id));
+        }
+        if (selectedGenreId.HasValue && selectedGenreId.Value > 0)
+        {
+            filtered = filtered.Where(m => 
+                m.MovieGenres.Any(mg => mg.GenreMovieFk == selectedGenreId.Value));
+        }
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            filtered = filtered.Where(m => 
+                m.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+        }
+
+        filtered = selectedSort switch
+        {
+            "my_list" => filtered.OrderByDescending(m => movieAddedDates.GetValueOrDefault(m.Id, DateTime.MinValue)),
+            "recently_watched" => filtered.OrderByDescending(m => movieWatchDates.GetValueOrDefault(m.Id, DateTime.MinValue)),
+            "alpha_az" => filtered.OrderBy(m => m.Name),
+            "added_latest" => filtered.OrderByDescending(m => m.UploadDate ?? DateTime.MinValue),
+            "year_latest" => filtered.OrderByDescending(m => m.Year ?? 0),
+            "length_longest" => filtered.OrderByDescending(m => m.Runtime ?? 0),
+            "best_rated" => filtered.OrderByDescending(m => m.VoteAverage ?? 0),
+            _ => filtered.OrderBy(m => m.Name)
+        };
+
+        filteredMovies = filtered.ToList();
+        
+        if (scrollToTop)
+        {
+            await JS.InvokeVoidAsync("window.scrollTo", 0, 0);
+        }
+    }
+
+    private string FormatImagePath(string originalPath)
+    {
+        if (string.IsNullOrEmpty(originalPath))
+            return "/images/placeholder.jpg";
+        
+        string formattedPath = originalPath.Replace(@"\\MSTNAS01\Torrents\", "/images/");
+        formattedPath = formattedPath.Replace('\\', '/');
+        
+        return formattedPath;
+    }
+
+    private void DrawerToggle()
+    {
+        Layout?.ToggleDrawer();
+    }
+
+    private void RightDrawerToggle()
+    {
+        _rightDrawerOpen = !_rightDrawerOpen;
+    }
+
+    private void HandleLogout()
+    {
+        Navigation.NavigateTo("/api/account/logout", forceLoad: true);
+    }
+
+    private void HandleLogoutAndCloseDrawer()
+    {
+        _rightDrawerOpen = false;
+        Navigation.NavigateTo("/api/account/logout", forceLoad: true);
+    }
+
+    private async Task NavigateToMyList()
+    {
+        selectedSort = "my_list";
+        _rightDrawerOpen = false;
+        await SortAndFilterMovies();
+    }
+
+    private void NavigateToProfile()
+    {
+        _rightDrawerOpen = false;
+        Navigation.NavigateTo("/userprofile");
+    }
+
+    private async Task NavigateToRecentlyWatched()
+    {
+        selectedSort = "recently_watched";
+        _rightDrawerOpen = false;
+        await SortAndFilterMovies();
+    }
+
+    private string FormatAvatarPath(string originalPath)
+    {
+        if (string.IsNullOrEmpty(originalPath))
+            return string.Empty;
+        
+        string formattedPath = originalPath.Replace(@"\\MSTNAS01\Torrents\", "/images/");
+        formattedPath = formattedPath.Replace('\\', '/');
+        
+        return formattedPath;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_scrollHandler != null)
+        {
+            try
+            {
+                await _scrollHandler.InvokeVoidAsync("dispose");
+                await _scrollHandler.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+}

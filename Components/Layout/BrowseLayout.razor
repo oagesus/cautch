@@ -1,0 +1,64 @@
+@inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Authorization
+@using mudblazor_cinema.Services
+@inject ThemeService ThemeService
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@implements IDisposable
+
+<MudThemeProvider Theme="@ThemeService.Theme" @bind-IsDarkMode="@_isDarkMode" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <AuthorizeView Roles="Admin" Context="adminDrawerContext">
+        <Authorized>
+            <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="2">
+                <NavMenu />
+            </MudDrawer>
+        </Authorized>
+    </AuthorizeView>
+    
+    <MudMainContent>
+        <CascadingValue Value="this">
+            @Body
+        </CascadingValue>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private bool _drawerOpen = true;
+    private bool _isDarkMode = true;
+    
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ThemeService.InitializeAsync(JS);
+            _isDarkMode = ThemeService.IsDarkMode;
+            ThemeService.OnThemeChanged += OnThemeChanged;
+            StateHasChanged();
+        }
+    }
+    
+    private async void OnThemeChanged()
+    {
+        await InvokeAsync(() =>
+        {
+            _isDarkMode = ThemeService.IsDarkMode;
+            StateHasChanged();
+        });
+    }
+    
+    public void ToggleDrawer()
+    {
+        _drawerOpen = !_drawerOpen;
+        StateHasChanged();
+    }
+    
+    public void Dispose()
+    {
+        ThemeService.OnThemeChanged -= OnThemeChanged;
+    }
+}
