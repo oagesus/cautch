@@ -1,6 +1,6 @@
 # Cautch
 
-A private movie streaming app built with Blazor Server and MudBlazor. Stream movies from your NAS with authentication, watch tracking, and gamification.
+A self-hosted movie streaming app built with Blazor Server and MudBlazor. Stream movies from your NAS with authentication, watch tracking, and gamification.
 
 ## Features
 
